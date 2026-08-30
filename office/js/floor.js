@@ -1,4 +1,4 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom7";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom8";
 import {
   TILE,
   SCALE,
@@ -10,8 +10,8 @@ import {
   tileToPx,
   getDesks,
   getBins,
-} from "./layout.js?v=mailroom7";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom7";
+} from "./layout.js?v=mailroom8";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom8";
 
 export { TILE, SCALE, deskForRun, binForRun, tileToPx, getDesks, getBins };
 
@@ -252,6 +252,7 @@ function drawMiniEnvelope(ctx, x, y, stamp) {
 
 function drawTray(ctx, bin, pile, hover) {
   const p = tileToPx(bin.tile);
+  const offset = bin.labelOffset || [0, 0];
   ctx.fillStyle = "#6b5340";
   ctx.fillRect(p.x - 11, p.y - 2, 22, 11);
   ctx.fillStyle = hover ? "#fff8e7" : bin.color || "#c9a66b";
@@ -264,16 +265,37 @@ function drawTray(ctx, bin, pile, hover) {
     const oy = -7 - Math.floor(i / 3) * 4;
     drawMiniEnvelope(ctx, p.x + ox, p.y + oy, run.stamp);
   });
-  ctx.fillStyle = "#fff8e7";
-  ctx.font = "4px monospace";
-  ctx.fillText(bin.label || "BIN", p.x - 10, p.y + 13);
+  const label = bin.label || "BIN";
+  drawFloorLabel(ctx, label, p.x + offset[0], p.y - 14 + offset[1], { tone: "gold" });
   if (pile?.length) {
     ctx.fillStyle = "#1a1320";
     ctx.fillRect(p.x + 6, p.y - 12, 8, 7);
     ctx.fillStyle = "#f4d35e";
     ctx.font = "5px monospace";
+    ctx.textBaseline = "alphabetic";
     ctx.fillText(String(pile.length), p.x + 7, p.y - 7);
   }
+}
+
+function drawFloorLabel(ctx, text, x, y, { tone = "cream", align = "center" } = {}) {
+  if (!text) return;
+  ctx.font = "6px monospace";
+  ctx.textBaseline = "middle";
+  const pad = 4;
+  const tw = ctx.measureText(text).width + pad * 2;
+  const left = align === "center" ? x - tw / 2 : x;
+  ctx.fillStyle = "rgba(26,19,32,0.88)";
+  ctx.fillRect(left, y - 5, tw, 10);
+  ctx.fillStyle = tone === "gold" ? "#f4d35e" : "#fff8e7";
+  const tx = align === "center" ? x - ctx.measureText(text).width / 2 : x + pad;
+  ctx.fillText(text, tx, y);
+}
+
+function drawDeskLabel(ctx, desk) {
+  const p = tileToPx(desk.tile);
+  const text = desk.label || desk.agent || "";
+  if (!text) return;
+  drawFloorLabel(ctx, text, p.x, p.y + 14, { tone: "cream" });
 }
 
 function drawDeskSet(ctx, desk, working) {
@@ -295,15 +317,10 @@ function drawDeskSet(ctx, desk, working) {
 }
 
 function drawRoomPlates(ctx) {
-  ctx.font = "5px monospace";
   for (const room of layout.rooms) {
-    const x = room.x * TILE + 3;
-    const y = room.y * TILE + 7;
-    const w = Math.max(28, room.name.length * 3.3 + 6);
-    ctx.fillStyle = "rgba(26,19,32,0.72)";
-    ctx.fillRect(x - 1, y - 5, w, 8);
-    ctx.fillStyle = "#fff8e7";
-    ctx.fillText(room.name, x, y);
+    const cx = (room.x + room.w / 2) * TILE;
+    const cy = (room.y + 0.65) * TILE;
+    drawFloorLabel(ctx, room.name, cx, cy, { tone: "gold" });
   }
 }
 
@@ -323,11 +340,9 @@ function drawProceduralGround(ctx) {
     ctx.strokeStyle = room.trim || "#8b6f47";
     ctx.lineWidth = 2;
     ctx.strokeRect(room.x * TILE + 1, room.y * TILE + 1, room.w * TILE - 2, room.h * TILE - 2);
-    ctx.fillStyle = room.trim || "#8b6f47";
-    ctx.fillRect(room.x * TILE, room.y * TILE, room.w * TILE, 8);
-    ctx.fillStyle = "#fff8e7";
-    ctx.font = "5px monospace";
-    ctx.fillText(room.name, room.x * TILE + 3, room.y * TILE + 6);
+    const cx = (room.x + room.w / 2) * TILE;
+    const cy = (room.y + 0.65) * TILE;
+    drawFloorLabel(ctx, room.name, cx, cy, { tone: "gold" });
   }
 }
 
@@ -417,9 +432,9 @@ class Avatar {
       const spots = layout.wander;
       const spot = spots[Math.floor(Math.random() * spots.length)];
       this.walkTo(spot);
-      this.thought = QUIPS.idle[Math.floor(Math.random() * QUIPS.idle.length)];
       this.linger = 1.6 + Math.random() * 2.2;
       this.idleIn = 6 + Math.random() * 8;
+      this.thought = "";
     } else if (this.status === "idle" && this.phase % 8 < 0.05) {
       this.thought = "";
     }
@@ -444,6 +459,7 @@ export class OfficeFloor {
     this._pendingSnapshot = null;
     this.replayTimers = [];
     this.errandSpot = [21, 10];
+    this._errandCooldown = 0;
     this.booted = Promise.resolve();
     canvas.addEventListener("click", (ev) => this._click(ev));
     canvas.addEventListener("mousemove", (ev) => this._hover(ev));
@@ -631,7 +647,8 @@ export class OfficeFloor {
     for (const env of this.envelopes) env.t += dt / env.dur;
     this.envelopes = this.envelopes.filter((e) => e.t < 1.15);
     for (const avatar of Object.values(this.avatars)) avatar.step(dt);
-    if (Math.random() < dt * 0.02) this._spawnErrand();
+    if (this._errandCooldown > 0) this._errandCooldown -= dt;
+    if (Math.random() < dt * 0.008) this._spawnErrand();
     this.draw();
     requestAnimationFrame((n) => this._tick(n));
   }
@@ -666,7 +683,7 @@ export class OfficeFloor {
       ctx.fillRect(door.x - 8, door.y - 4, 16, 8);
     }
 
-    if (layout.source === "limezu") drawRoomPlates(ctx);
+    drawRoomPlates(ctx);
 
     for (const [key, bin] of Object.entries(getBins())) {
       drawTray(ctx, bin, this.piles[key] || [], this.hover === `bin:${key}`);
@@ -718,8 +735,12 @@ export class OfficeFloor {
       drawAvatar(ctx, avatar.character, avatar.x, avatar.y, avatar.status, avatar.facing, avatar.phase);
     }
 
+    for (const desk of Object.values(getDesks())) {
+      drawDeskLabel(ctx, desk);
+    }
+
     let lift = 0;
-    const bubbles = people.filter((a) => a.thought && (a.status === "work" || a.status === "think" || a.status === "walk"));
+    const bubbles = people.filter((a) => a.thought && a.status === "work");
     bubbles.sort((a, b) => a.x - b.x);
     for (const avatar of bubbles) {
       const overlap = bubbles.some((other) => other !== avatar && Math.abs(other.x - avatar.x) < 28 && Math.abs(other.y - avatar.y) < 16);
@@ -868,11 +889,13 @@ export class OfficeFloor {
   }
 
   _spawnErrand() {
-    const idle = Object.values(this.avatars).filter((a) => !a.work && a.status === "idle");
+    if (this._errandCooldown > 0) return;
+    const idle = Object.values(this.avatars).filter((a) => !a.work && a.status === "idle" && !a.thought);
     if (!idle.length) return;
-    const avatar = idle[Math.floor(Math.random() * idle.length)];
-    avatar.thought = Math.random() > 0.5 ? "coffee run" : "errand";
+    const avatar = idle[0];
+    avatar.thought = "coffee run";
     avatar.walkTo(this.errandSpot);
     avatar.linger = 2.2;
+    this._errandCooldown = 12;
   }
 }

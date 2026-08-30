@@ -1,7 +1,7 @@
-import { OfficeFloor } from "./floor.js?v=mailroom7";
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom7";
-import { connectWS, getJSON, getToken, postJSON, setToken, uploadFile } from "./api.js?v=mailroom7";
-import { HistoryView } from "./history.js?v=mailroom7";
+import { OfficeFloor } from "./floor.js?v=mailroom8";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom8";
+import { connectWS, getJSON, getToken, postJSON, setToken, uploadFile } from "./api.js?v=mailroom8";
+import { HistoryView } from "./history.js?v=mailroom8";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");
@@ -112,7 +112,7 @@ function escapeHtml(value) {
 }
 
 function switchTab(name) {
-  document.querySelectorAll(".tabs button").forEach((btn) => {
+  document.querySelectorAll(".tabs button[data-tab]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.tab === name);
   });
   document.querySelectorAll(".view").forEach((view) => {
@@ -123,24 +123,28 @@ function switchTab(name) {
     floor: "Command Center",
     inbox: "Inbox Hopper",
     review: "Review Siding",
-    archive: "Archive",
-    failed: "Returns",
-    matters: "Matters",
+    archive: "Archive Shelves",
+    failed: "Returns Tray",
+    matters: "Matter Index",
     datasets: "Hub Datasets",
-    topics: "Live Topics",
-    hive: "Hive Mailboxes",
+    topics: "Floor Briefs",
+    hive: "Hive Board",
     metrics: "Floor Metrics",
     history: "Run History",
-    console: "Live Console",
+    console: "Event Console",
   }[name];
 }
 
-document.getElementById("tabs").addEventListener("click", (ev) => {
-  const btn = ev.target.closest("button");
-  if (!btn?.dataset.tab) return;
-  switchTab(btn.dataset.tab);
-  if (btn.dataset.tab === "history") HistoryView.refresh().catch(() => {});
-});
+function wireTabs() {
+  document.querySelectorAll(".tabs button[data-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchTab(btn.dataset.tab);
+      if (btn.dataset.tab === "history") HistoryView.refresh().catch(() => {});
+    });
+  });
+}
+
+wireTabs();
 
 window.addEventListener("mailroom:inspect", (ev) => {
   const docId = ev.detail?.doc_id;
