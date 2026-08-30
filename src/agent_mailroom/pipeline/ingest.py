@@ -22,11 +22,16 @@ def _read_pdf(path: Path) -> str:
         if raw.startswith(b"%PDF"):
             raise RuntimeError("PDF ingest needs pypdf — pip install 'agent-mailroom[pdf]'")
         return raw.decode("utf-8", errors="replace")
-    reader = PdfReader(str(path))
-    pages = []
-    for page in reader.pages:
-        pages.append(page.extract_text() or "")
-    return "\n".join(pages).strip()
+    try:
+        reader = PdfReader(str(path))
+        pages = []
+        for page in reader.pages:
+            pages.append(page.extract_text() or "")
+        return "\n".join(pages).strip()
+    except Exception:
+        # Malformed or unreadable PDF: degrade to a best-effort text decode
+        # instead of crashing the ingest pipeline.
+        return path.read_bytes().decode("utf-8", errors="replace")
 
 
 def _read_docx(path: Path) -> str:
