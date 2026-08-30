@@ -9,6 +9,6 @@
     "start:attached": "electron . --attached"
   },
   "devDependencies": {
-    "electron": "^36.4.0"
+    "electron": "^44.0.0"
   }
 }
