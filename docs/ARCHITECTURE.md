@@ -6,6 +6,7 @@ The Mailroom is a self-contained hybrid:
 - **Hive** — atomic mailboxes. Agents write JSON to `outbox/`; the router delivers to `inbox/` and the office draws a flying envelope.
 - **Office** — a walking pixel floor branded **The Mailroom**. LimeZu Modern Interiors tilesets paint the rooms when `office/tiles/` is present; the original procedural rooms are the fallback. A hardened Electron shell can wrap the same `/office/` UI the browser already uses.
 - **Harnesses** — OpenRouter is primary. OpenAI, Ollama, vLLM, generic OpenAI-compatible, and mock are registered fallbacks.
+- **Scoring** — deterministic field scoring via [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) **v0.12.1** (same pin as llm-mailroom v0.6.0); `observability/field_scoring.py` is a shim + SQLite glue.
 - **Hub corpora** — Lucius-Morningstar datasets pull through the same inbox the watcher already drains.
 
 Uploads, demo piles, and filing-like topics **only write the inbox** (plus a `.meta` sidecar). The embedded watcher claims each file into `processing/` and runs the graph once. `MAILROOM_SYNC=1` drains the inbox in-request so tests stay deterministic. Do not call the runner on a file that is still sitting in the inbox — that double-runs.

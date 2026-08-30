@@ -6,7 +6,7 @@ A self-contained legal-document mailroom: one state machine per document, specia
 
 You talk to the floor. The boss desk only bothers you when a filing actually needs a human.
 
-Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom) **v0.6.0** (happy-path classify + extract, procedural matter-record, severity-aware gates). Floor / hive language from [munder-difflin](https://github.com/chaitanyagiri/munder-difflin) and [The-Mailroom](https://github.com/Exios66/The-Mailroom). Corpora from [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) on Hugging Face. This repo does not require those siblings at runtime.
+Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom) **v0.6.0** (happy-path classify + extract, procedural matter-record, severity-aware gates) with field scoring from [llm-dojo-scoring](https://github.com/Exios66/llm-dojo-scoring) **v0.12.1**. Floor / hive language from [munder-difflin](https://github.com/chaitanyagiri/munder-difflin) and [The-Mailroom](https://github.com/Exios66/The-Mailroom). Corpora from [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) on Hugging Face. This repo does not require those siblings at runtime.
 
 ## What you get
 
