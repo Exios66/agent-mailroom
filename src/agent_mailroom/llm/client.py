@@ -39,8 +39,6 @@ def _mock_route(agent: str, user: str) -> dict[str, Any]:
         return mock.arbiter(verdict)
     if agent == "boss":
         return mock.boss("conflict" in text.lower())
-    if agent == "reporter":
-        return {"report": mock.report("document", {})}
     doc_type = "contract"
     if text.startswith("DOC_TYPE="):
         doc_type = text.split("\n", 1)[0].split("=", 1)[1].strip()

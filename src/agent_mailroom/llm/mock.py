@@ -13,7 +13,7 @@ def classify(text: str) -> dict[str, Any]:
     rules = [
         (
             "insurance_claim",
-            0.98,
+            0.99,
             ("claim no", "coverage determination", "policy no", "date of loss", "adjuster"),
         ),
         (
@@ -28,17 +28,17 @@ def classify(text: str) -> dict[str, Any]:
         ),
         (
             "compliance_filing",
-            0.96,
+            0.98,
             ("form 10-k", "form 10-q", "securities and exchange", "item 1a"),
         ),
         (
             "merger_agreement",
-            0.96,
+            0.99,
             ("agreement and plan of merger", "surviving corporation", "merger consideration"),
         ),
         (
             "contract",
-            0.96,
+            0.99,
             ("master services agreement", "now, therefore", "governing law", "in witness whereof"),
         ),
     ]
@@ -55,7 +55,7 @@ def classify(text: str) -> dict[str, Any]:
     if "ambiguous" in blob or ("memo" in blob and "contract" in blob and "claim" in blob):
         return {
             "doc_type": "correspondence",
-            "confidence": 0.82,
+            "confidence": 0.88,
             "reasoning": "mixed topics — medium band",
         }
     return {"doc_type": "unknown", "confidence": 0.4, "reasoning": "no taxonomy match"}
@@ -71,31 +71,51 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
         return {
             "document_name": _first(r"^(.*agreement.*)$", text.splitlines()[0] if text else "")
             or "Master Services Agreement",
-            "parties": [p for p in re.findall(r"\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)+(?: Inc\.| LLC| Corporation)?)", text)[:4]],
+            "parties": [
+                p
+                for p in re.findall(
+                    r"\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)+(?: Inc\.| LLC| Corporation)?)",
+                    text,
+                )[:4]
+            ],
             "effective_date": _first(r"(?:dated|effective as of)\s+([A-Z][a-z]+ \d{1,2}, \d{4})", text),
             "governing_law": _first(r"(Delaware|Wisconsin|New York)", text),
-            "key_obligations": ["Perform services", "Pay invoices within 30 days"],
-            "confidence": 0.92,
+            "cuad_clauses": [
+                "Governing Law: Delaware",
+                "Payment: Net 30",
+            ],
+            "maud_clauses": [] if doc_type == "contract" else ["Merger Consideration: mixed"],
+            "confidence": 0.98,
         }
     if doc_type == "corporate_record":
         return {
-            "entity_name": _first(r"OF\n([A-Z][A-Z0-9 .,&'-]+)", text) or _first(r"of\n([A-Za-z0-9 .,&'-]+)", text) or "HarborPoint Holdings, Inc.",
+            "entity_name": _first(r"OF\n([A-Z][A-Z0-9 .,&'-]+)", text)
+            or _first(r"of\n([A-Za-z0-9 .,&'-]+)", text)
+            or "HarborPoint Holdings, Inc.",
             "record_type": "board_consent" if "consent" in text.lower() else "corporate_record",
             "effective_date": _first(r"as of the (\d{1,2}(?:st|nd|rd|th)? day of [A-Za-z]+, \d{4})", text),
             "signatories": re.findall(r"/s/\s+([A-Za-z .]+)", text)[:5],
             "jurisdiction": _first(r"(Delaware|Wisconsin|New York)", text),
-            "key_provisions": ["Approve Master Services Agreement", "Establish Audit Committee"],
-            "confidence": 0.93,
+            "intent": "authorize_transaction",
+            "subject_matter": "Approve Master Services Agreement and Audit Committee",
+            "keywords": ["consent", "audit committee", "msa"],
+            "confidence": 0.96,
         }
     if doc_type == "correspondence":
         return {
             "sender": _first(r"This firm represents ([^.]+)", text) or "Northwind Logistics Corporation",
             "recipient": _first(r"Attn:\s+(.+)", text) or "General Counsel",
             "communication_type": "demand_letter" if "demand" in text.lower() else "letter",
-            "communication_date": _first(r"^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}", text),
+            "communication_date": _first(
+                r"^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}",
+                text,
+            ),
             "demand_amount": _first(r"\$([0-9,]+\.\d{2})", text),
-            "key_points": ["Unpaid invoices", "Material breach", "Ten-day cure"],
+            "action_items": ["Cure breach within ten days", "Pay outstanding invoices"],
             "urgency": "high",
+            "intent": "demand_cure",
+            "subject_matter": "Unpaid invoices and material breach",
+            "keywords": ["demand", "breach", "invoices"],
             "confidence": 0.94,
         }
     if doc_type == "compliance_filing":
@@ -105,7 +125,7 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
             "entity_name": _first(r"([A-Z][A-Za-z0-9 .,&]+(?:, Inc\.))", text),
             "status": "filed",
             "key_requirements": ["Risk factors", "Financial statements"],
-            "confidence": 0.9,
+            "confidence": 0.96,
         }
     if doc_type == "insurance_claim":
         return {
@@ -121,7 +141,14 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
             "coverage_determination": _first(r"Coverage Determination:\s*([A-Z]+)", text),
             "damages_description": _first(r"Description of Loss:\s*\n(.+)", text),
             "supporting_documents": ["photos", "contractor estimate"],
-            "confidence": 0.95,
+            "intent": "first_notice_of_loss",
+            "subject_matter": "Property damage claim",
+            "keywords": ["fnol", "property", "water"],
+            "claim_checklist": [
+                "Cause of Loss: water intrusion",
+                "Estimate: contractor quote on file",
+            ],
+            "confidence": 0.98,
         }
     return {"confidence": 0.4}
 
@@ -145,8 +172,3 @@ def boss(conflict: bool) -> dict[str, Any]:
     if conflict:
         return {"decision": "review", "reasoning": "matter conflict needs a human"}
     return {"decision": "approved", "reasoning": "that's what she said — approved"}
-
-
-def report(doc_type: str, extracted: dict[str, Any]) -> str:
-    title = extracted.get("document_name") or extracted.get("entity_name") or extracted.get("claim_number") or doc_type
-    return f"Matter record for {title}. Class={doc_type}. Fields captured: {', '.join(k for k,v in extracted.items() if v not in (None, '', []))}."

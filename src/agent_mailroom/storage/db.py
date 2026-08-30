@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS documents (
     review_decision TEXT,
     routing_path TEXT,
     trace_id TEXT,
+    judge_verdict TEXT,
+    judge_score REAL,
+    judge_findings TEXT,
+    arbiter_decision TEXT,
+    arbiter_reasoning TEXT,
+    arbiter_retry_count INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -127,4 +133,21 @@ def init_db() -> None:
     with _DB_LOCK:
         with connect() as conn:
             conn.executescript(SCHEMA)
+            _ensure_document_judgment_columns(conn)
             conn.commit()
+
+
+def _ensure_document_judgment_columns(conn: sqlite3.Connection) -> None:
+    """llm-mailroom v0.6.0: arbiter/judge fields persist on catalog rows."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(documents)").fetchall()}
+    alters = [
+        ("judge_verdict", "TEXT"),
+        ("judge_score", "REAL"),
+        ("judge_findings", "TEXT"),
+        ("arbiter_decision", "TEXT"),
+        ("arbiter_reasoning", "TEXT"),
+        ("arbiter_retry_count", "INTEGER DEFAULT 0"),
+    ]
+    for name, decl in alters:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {decl}")
