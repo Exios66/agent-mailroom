@@ -12,8 +12,9 @@ Inspired by [munder-difflin](https://github.com/chaitanyagiri/munder-difflin) (o
 
 - **Core mailroom pipeline** — ingest → classify → (Lane A reviewer) → extract → (Lane B judge / arbiter) → boss → human review → report → catalog → archive
 - **Six live document classes** — `contract`, `merger_agreement`, `corporate_record`, `correspondence`, `compliance_filing`, `insurance_claim` (`unknown` parks on review)
+- **Inbox watcher** — txt / md / pdf / docx land in the inbox; the watcher claims each file once. Matter conflicts escalate to Michael.
 - **Hive mailboxes** — one JSON file per message, single-writer desks, speech acts (`request`, `inform`, `query`, …)
-- **Office floor** — original 16px rooms, procedural avatars, flying envelopes, review siding, hive + metrics + console
+- **Office floor** — original 16px rooms, walking avatars, thought clouds, flying envelopes, review siding, hive + metrics + console
 - **SQLite-first** — `data/mailroom.db` + filesystem bins. No Docker required.
 - **Mock LLM by default** — `MAILROOM_LLM_PROVIDER=mock` runs the whole floor without keys. Flip to OpenRouter / Ollama / OpenAI when you want real models.
 
@@ -54,7 +55,7 @@ Same producer shape as llm-mailroom. Prefer `/v1`.
 
 | Method | Path | Role |
 |---|---|---|
-| `GET` | `/v1/health` | Liveness + provider lamp |
+| `GET` | `/v1/health` | Liveness + watcher lamp |
 | `POST` | `/v1/upload` | Queue a document (202) |
 | `POST` | `/v1/topics` | `action=queue` parks a brief; `action=launch` delivers it to a desk |
 | `POST` | `/v1/topics/{id}/launch` | Dispatch a queued topic onto the floor |
@@ -65,6 +66,7 @@ Same producer shape as llm-mailroom. Prefer `/v1`.
 | `GET` | `/v1/audit/{doc_id}` | Hash-chained trail + validity |
 | `GET` | `/v1/review/queue` | Human siding |
 | `POST` | `/v1/review/{doc_id}/resolve` | `resume` / `record` / `requeue` / `complete` |
+| `GET` | `/v1/ops/status` | Watcher, inbox pending, stage counts, review queue |
 | `GET` | `/v1/floor` | Office snapshot |
 | `GET` | `/v1/hive` | Roster + inboxes |
 | `WS` | `/ws` | Live pipeline + hive events |
@@ -83,7 +85,7 @@ Tests never call a hosted LLM. The mock sorter/specialists are deterministic ove
 src/agent_mailroom/   pipeline, agents, hive, storage, API
 office/               pixel floor (vanilla JS, no build step)
 fixtures/samples/     HarborPoint demo pile
-tests/                routing, audit chain, e2e, API
+tests/                routing, audit chain, e2e, watcher, ingest, API
 docs/ARCHITECTURE.md  contracts and data flow
 ```
 

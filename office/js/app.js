@@ -33,6 +33,7 @@ function showInspect(item) {
       <h3>${escapeHtml(title)}</h3>
       <div>${chips}</div>
       <p class="muted">${escapeHtml(item.doc_id || item.desk || "")}</p>
+      ${item.thought ? `<p>${escapeHtml(item.thought)}</p>` : ""}
       ${item.escalation_reason ? `<p>${escapeHtml(item.escalation_reason)}</p>` : ""}
       ${item.report ? `<p>${escapeHtml(item.report)}</p>` : ""}
       ${fields}
@@ -185,31 +186,37 @@ function renderTopics(topics) {
   });
 }
 
-function renderMetrics(runs, health) {
+function renderMetrics(runs, health, ops) {
   const stages = {};
   for (const run of runs) stages[run.stage] = (stages[run.stage] || 0) + 1;
   providerEl.textContent = health?.checks?.llm_provider || "mock";
+  const lamp = health?.checks?.watcher || ops?.watcher?.lamp || "ok";
+  const pending = health?.checks?.inbox_pending ?? ops?.inbox_pending ?? 0;
+  document.getElementById("lamp").textContent =
+    lamp === "ok" ? "SOURCE: LIVE PIPELINE" : `SOURCE: WATCHER ${String(lamp).toUpperCase()}`;
   metricsEl.innerHTML = `
     <div class="card"><h3>On the floor</h3><p>${runs.length} documents</p></div>
+    <div class="card"><h3>Watcher</h3><p>${escapeHtml(lamp)} · inbox ${pending}</p></div>
+    <div class="card"><h3>Review siding</h3><p>${ops?.review_queue ?? 0}</p></div>
     ${Object.entries(stages).map(([k, v]) => `<div class="card"><h3>${escapeHtml(k)}</h3><p>${v}</p></div>`).join("")}
   `;
-  counts.textContent = `${runs.length} on the floor`;
 }
 
 async function refresh() {
   try {
-    const [floorData, review, hive, health, topics] = await Promise.all([
+    const [floorData, review, hive, health, topics, ops] = await Promise.all([
       getJSON("/v1/floor"),
       getJSON("/v1/review/queue"),
       getJSON("/v1/hive"),
       getJSON("/v1/health"),
       getJSON("/v1/topics"),
+      getJSON("/v1/ops/status"),
     ]);
     floor.applySnapshot(floorData.runs || []);
     renderReview(review.documents || []);
     renderHive(hive);
     renderTopics(topics.topics || []);
-    renderMetrics(floorData.runs || [], health);
+    renderMetrics(floorData.runs || [], health, ops);
     const queued = topics.queued || 0;
     const live = topics.live || 0;
     counts.textContent = `${floorData.runs?.length || 0} docs · ${live} live topics · ${queued} queued`;

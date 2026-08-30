@@ -25,20 +25,20 @@
     <button class="action primary" id="demo-btn">Drop a pile</button>
     <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
       Upload
-      <input id="upload" type="file" hidden accept=".txt,.md,.pdf">
+      <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx">
     </label>
   </header>
 
   <main class="shell">
     <section class="floor-wrap">
       <canvas id="floor" width="1280" height="768" aria-label="Office floor"></canvas>
-      <div class="legend">Click an envelope or desk · gold = review · maroon office = the boss</div>
+      <div class="legend">Click an avatar, envelope, or desk · gold thought = live work · maroon office = the boss</div>
     </section>
     <aside class="desk">
       <h2 id="panel-title">Command Center</h2>
       <div class="body">
         <section class="view active" id="view-floor">
-          <p class="muted">The floor is the pipeline. Avatars sit the mailroom roster. Envelopes are documents moving desk to desk.</p>
+          <p class="muted">The floor is the pipeline. Avatars walk the hall, sit when a filing lands, and mutter thought clouds. Envelopes fly desk to desk.</p>
           <div id="inspect"></div>
         </section>
         <section class="view" id="view-topics">

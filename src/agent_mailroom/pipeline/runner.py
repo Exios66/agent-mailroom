@@ -102,6 +102,7 @@ def _broadcast(state: RunState, node: str, actor: str) -> None:
             "extracted_data": state.extracted_data,
             "report": state.report,
             "judge_verdict": state.judge_verdict,
+            "conflict_detected": state.conflict_detected,
         }
     )
     spec = MAIL_EDGES.get(node)
@@ -154,11 +155,20 @@ def run_document(
         dest = processing_dir(doc_id) / file_path.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         if file_path.resolve() != dest.resolve():
-            dest.write_bytes(file_path.read_bytes())
+            from agent_mailroom.pipeline.bins import inbox_dir, move_file
+
+            if file_path.parent.resolve() == inbox_dir().resolve():
+                dest = move_file(file_path, dest.parent, file_path.name)
+            else:
+                dest.write_bytes(file_path.read_bytes())
+        display = file_path.name
+        prefix = f"{doc_id}--"
+        if display.startswith(prefix):
+            display = display[len(prefix) :]
         state = RunState(
             doc_id=doc_id,
             matter_id=matter_id,
-            original_filename=file_path.name,
+            original_filename=display,
             file_path=dest,
         )
         _audit(state, "ingested", "intake", {"path": str(dest)})
@@ -174,7 +184,10 @@ def run_document(
         actor = _actor(state, node)
 
         if node == "ingest":
-            nodes.node_ingest(state)
+            try:
+                nodes.node_ingest(state)
+            except Exception as exc:
+                return fail_document(state, f"ingest failed: {exc}")
             _broadcast(state, node, actor)
             node = "classify"
             continue
@@ -193,6 +206,8 @@ def run_document(
         if node in {"extract", "retry_extract"}:
             nodes.node_extract(state)
             _audit(state, "extracted", specialist_for(state.doc_type or "contract"), {"confidence": state.extraction_confidence})
+            if state.conflict_detected:
+                _audit(state, "conflict_detected", "boss", {"reason": state.escalation_reason})
             _persist(state)
             _broadcast(state, node, actor)
             node = routing.after_extract(state)

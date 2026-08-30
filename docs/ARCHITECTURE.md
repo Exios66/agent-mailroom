@@ -6,11 +6,13 @@ Agent Mailroom is a self-contained hybrid:
 - **Hive** — Munder-style atomic mailboxes. Agents write JSON to `outbox/`; the router delivers to `inbox/` and the office draws a flying envelope.
 - **Office** — an original pixel floor (no LimeZu tilesets) with procedural sitcom-cast avatars, SNES chrome, and maroon/gold Dunder-Mifflin branding.
 
+Uploads, demo piles, and filing-like topics **only write the inbox** (plus a `.meta` sidecar). The embedded watcher claims each file into `processing/` and runs the graph once. `MAILROOM_SYNC=1` drains the inbox in-request so tests stay deterministic. Do not call the runner on a file that is still sitting in the inbox — that double-runs.
+
 ```
-upload / demo
+upload / demo / topic ingest / drop
     │
     ▼
-inbox bin ──► ingest ──► sorter (Pam)
+inbox bin + sidecar ──► watcher claim ──► ingest ──► sorter (Pam)
                  │
                  ├── high confidence ──► specialist desk (Dwight / Angela / Jim / Toby / Meredith)
                  ├── medium band ──► Kelly second opinion ──► extract or review
