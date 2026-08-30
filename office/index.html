@@ -7,37 +7,45 @@
   <title>The Mailroom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom7">
-  <link rel="stylesheet" href="/office/css/office.css?v=mailroom7">
+  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom8">
+  <link rel="stylesheet" href="/office/css/office.css?v=mailroom8">
   <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
 </head>
 <body>
   <header class="chrome">
     <div class="brand">THE MAILROOM<small>classify · extract · judge · archive</small></div>
-    <nav class="tabs" id="tabs" data-testid="office-tabs">
-      <button data-tab="floor" data-testid="tab-floor" class="active">Floor</button>
-      <button data-tab="inbox" data-testid="tab-inbox">Inbox <span class="badge" data-badge="inbox" hidden>0</span></button>
-      <button data-tab="review" data-testid="tab-review">Review <span class="badge" data-badge="review" hidden>0</span></button>
-      <button data-tab="archive" data-testid="tab-archive">Archive <span class="badge" data-badge="archive" hidden>0</span></button>
-      <button data-tab="failed" data-testid="tab-failed">Returns <span class="badge" data-badge="failed" hidden>0</span></button>
-      <button data-tab="matters" data-testid="tab-matters">Matters</button>
-      <button data-tab="datasets" data-testid="tab-datasets">Datasets</button>
-      <button data-tab="topics" data-testid="tab-topics">Topics</button>
-      <button data-tab="hive" data-testid="tab-hive">Hive</button>
-      <button data-tab="metrics" data-testid="tab-metrics">Metrics</button>
-      <button data-tab="history" data-testid="tab-history">History</button>
-      <button data-tab="console" data-testid="tab-console">Console</button>
-    </nav>
-    <button class="action" id="brief-btn" data-testid="brief-btn">Brief floor</button>
-    <button class="action primary" id="demo-btn" data-testid="demo-btn">Drop a pile</button>
-    <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-      Upload
-      <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx" data-testid="upload">
-    </label>
-    <form id="auth-gate" class="auth-gate" hidden data-testid="auth-gate">
-      <input id="auth-token" type="password" placeholder="API token" autocomplete="off" aria-label="API token">
-      <button type="submit" class="action">Unlock</button>
-    </form>
+    <div class="nav-wrap">
+      <nav class="tabs tabs-mailroom" id="tabs" data-testid="office-tabs" aria-label="Mailroom">
+        <span class="tab-group-label">Mailroom</span>
+        <button data-tab="floor" data-testid="tab-floor" class="active">Floor</button>
+        <button data-tab="inbox" data-testid="tab-inbox">Inbox <span class="badge" data-badge="inbox" hidden>0</span></button>
+        <button data-tab="review" data-testid="tab-review">Review <span class="badge" data-badge="review" hidden>0</span></button>
+        <button data-tab="archive" data-testid="tab-archive">Archive <span class="badge" data-badge="archive" hidden>0</span></button>
+        <button data-tab="failed" data-testid="tab-failed">Returns <span class="badge" data-badge="failed" hidden>0</span></button>
+      </nav>
+      <nav class="tabs tabs-ops" aria-label="Operations">
+        <span class="tab-group-label">Ops</span>
+        <button data-tab="matters" data-testid="tab-matters">Matters</button>
+        <button data-tab="datasets" data-testid="tab-datasets">Datasets</button>
+        <button data-tab="topics" data-testid="tab-topics">Topics</button>
+        <button data-tab="hive" data-testid="tab-hive">Hive</button>
+        <button data-tab="metrics" data-testid="tab-metrics">Metrics</button>
+        <button data-tab="history" data-testid="tab-history">History</button>
+        <button data-tab="console" data-testid="tab-console">Console</button>
+      </nav>
+    </div>
+    <div class="chrome-actions">
+      <button class="action" id="brief-btn" data-testid="brief-btn">Brief</button>
+      <button class="action primary" id="demo-btn" data-testid="demo-btn">Demo pile</button>
+      <label class="action upload-btn">
+        Upload
+        <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx" data-testid="upload">
+      </label>
+      <form id="auth-gate" class="auth-gate" hidden data-testid="auth-gate">
+        <input id="auth-token" type="password" placeholder="API token" autocomplete="off" aria-label="API token">
+        <button type="submit" class="action">Unlock</button>
+      </form>
+    </div>
   </header>
 
   <main class="shell">
@@ -112,35 +120,43 @@
           <div id="topic-list"></div>
         </section>
         <section class="view" id="view-review">
+          <p class="section-lead muted">Human siding — approve, record, or requeue parked filings.</p>
           <div id="review-list" data-testid="review-list"></div>
         </section>
         <section class="view" id="view-archive">
+          <p class="section-lead muted">Creed's shelves — verify chains and requeue reconsider filings.</p>
           <div class="row" style="margin-bottom:10px">
             <label class="check"><input type="checkbox" id="archive-reconsider-only" data-testid="archive-reconsider-only"> Reconsider only</label>
           </div>
           <div id="archive-list" data-testid="archive-list"></div>
         </section>
         <section class="view" id="view-failed">
+          <p class="section-lead muted">Returns tray — rejected or failed pipeline runs.</p>
           <div id="failed-list" data-testid="failed-list"></div>
         </section>
         <section class="view" id="view-matters">
+          <p class="section-lead muted">Matter index across the mailroom catalog.</p>
           <div id="matter-list" data-testid="matter-list"></div>
         </section>
         <section class="view" id="view-hive">
+          <p class="section-lead muted">Agent mailboxes and the shared blackboard.</p>
           <div id="hive-list"></div>
         </section>
         <section class="view" id="view-metrics">
+          <p class="section-lead muted">Floor counts, harnesses, and boss ops.</p>
           <div id="providers-panel" data-testid="providers-panel"></div>
           <div id="metrics"></div>
           <div id="ops-results" data-testid="ops-results"></div>
         </section>
         <section class="view" id="view-history">
+          <p class="section-lead muted">Recent runs with floor replay.</p>
           <div class="row" style="margin-bottom:10px">
             <button id="history-refresh" class="action" data-testid="history-refresh">Refresh history</button>
           </div>
           <div id="history-list" data-testid="history-list"></div>
         </section>
         <section class="view" id="view-console">
+          <p class="section-lead muted">Live pipeline and hive event stream.</p>
           <div id="console-log"></div>
         </section>
       </div>
@@ -155,6 +171,6 @@
     <a id="limezu-credit" data-testid="limezu-credit" hidden href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">Tiles: LimeZu</a>
   </footer>
 
-  <script type="module" src="/office/js/app.js?v=mailroom7"></script>
+  <script type="module" src="/office/js/app.js?v=mailroom8"></script>
 </body>
 </html>

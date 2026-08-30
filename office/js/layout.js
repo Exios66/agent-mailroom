@@ -1,4 +1,4 @@
-import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom7";
+import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom8";
 
 export const TILE = 16;
 export const SCALE = 2;
@@ -42,11 +42,11 @@ export const PROCEDURAL_DESKS = {
 };
 
 export const PROCEDURAL_BINS = {
-  inbox: { tile: [18, 4], label: "INBOX", tab: "inbox", color: "#7d97b5" },
-  classified: { tile: [21, 4], label: "SORTED", tab: "inbox", color: "#f4d35e" },
-  review: { tile: [7, 4], label: "REVIEW", tab: "review", color: "#f4d35e" },
-  archive: { tile: [6, 12], label: "ARCHIVE", tab: "archive", color: "#5ca97a" },
-  failed: { tile: [3, 14], label: "RETURNS", tab: "failed", color: "#d96a62" },
+  inbox: { tile: [18, 4], label: "INBOX", tab: "inbox", color: "#7d97b5", labelOffset: [-12, 0] },
+  classified: { tile: [21, 4], label: "SORTED", tab: "inbox", color: "#f4d35e", labelOffset: [12, 0] },
+  review: { tile: [7, 4], label: "REVIEW", tab: "review", color: "#f4d35e", labelOffset: [0, -2] },
+  archive: { tile: [6, 12], label: "ARCHIVE", tab: "archive", color: "#5ca97a", labelOffset: [-10, 0] },
+  failed: { tile: [3, 14], label: "RETURNS", tab: "failed", color: "#d96a62", labelOffset: [10, 0] },
 };
 
 const PROCEDURAL_WANDER = [
@@ -154,6 +154,7 @@ export function applyTiledLayout({ manifest, map, tilesets, below, above }) {
       tab: spec.tab || key,
       color: spec.color || "#f4d35e",
       spawn: spec.spawn,
+      labelOffset: spec.labelOffset || [0, 0],
     };
     grid[tile[1] * map.width + tile[0]] = 1;
   }
