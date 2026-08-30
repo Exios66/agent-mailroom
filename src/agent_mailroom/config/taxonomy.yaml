@@ -193,6 +193,24 @@ vision:
     - gemini
     - claude-3
 
+# Deterministic field-type-aware scoring via llm-dojo-scoring v0.12.1
+# (same pin as llm-mailroom v0.6.0). Local module is a shim + SQLite glue.
 field_scoring:
   ambiguous_band: [0.55, 0.85]
+  type_bands:
+    date: never
+    id: never
+    money: [0.675, 0.938]
+    free_text: [0.6, 0.95]
+    name: [0.5, 1.0]
+    entity_list: [0.5, 1.0]
+  bipartite_match_threshold: 0.6
   embedding_enabled: false
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_rescue_below: 0.7
+  containment_fields: [governing_law, term_length, renewal_terms, subject_matter]
+  # Pared v0.6.0 checklists (not open key_obligations / termination_clauses).
+  partial_gt_fields: [parties, keywords, cuad_clauses, maud_clauses, claim_checklist, action_items]
+  factuality_verification:
+    enabled: true
+    token_coverage: 0.7

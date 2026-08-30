@@ -61,6 +61,18 @@ def test_field_scoring():
     )
     assert result["aggregate"] > 0
     assert len(result["fields"]) == 2
+    assert result["engine"].startswith("llm-dojo-scoring")
+
+
+def test_dojo_scoring_pin():
+    """Agent Mailroom tracks llm-mailroom v0.6.0 → llm-dojo-scoring v0.12.1."""
+    import llm_dojo_scoring
+    from agent_mailroom.observability import field_scoring as fs
+
+    assert fs.DOJO_AVAILABLE is True
+    assert llm_dojo_scoring.__version__ == "0.12.1"
+    assert hasattr(fs, "score_extraction")
+    assert fs.DOJO_AVAILABLE and hasattr(fs, "ExtractionScoreResult")
 
 
 def test_observability_provider_default():
