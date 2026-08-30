@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
+import os
 
 from agent_mailroom.config.loader import agent_roster
 from agent_mailroom.hive.mailbox import deliver, hive_dir, seed_hive
-from agent_mailroom.pipeline.bins import inbox_dir
+from agent_mailroom.pipeline.bins import enqueue_inbox
 from agent_mailroom.pipeline.events import emit
-from agent_mailroom.pipeline.runner import run_document
 from agent_mailroom.storage.topics import create_topic, get_topic, list_topics, update_topic
 
 LIVE_STATUSES = {"assigned", "in_progress"}
@@ -91,10 +90,18 @@ def _dispatch(topic: dict, *, ingest: bool | None = None) -> dict:
     body = topic.get("body") or ""
     should_ingest = looks_like_document(body) if ingest is None else ingest
     if should_ingest and body.strip():
-        dest_path = inbox_dir() / f"{topic['topic_id']}--topic.txt"
-        dest_path.write_text(body, encoding="utf-8")
-        state = run_document(Path(dest_path), matter_id=topic["matter_id"], doc_id=topic["topic_id"])
-        return update_topic(topic["topic_id"], status="in_progress", doc_id=state.doc_id) or topic
+        enqueue_inbox(
+            body.encode("utf-8"),
+            "topic.txt",
+            doc_id=topic["topic_id"],
+            matter_id=topic["matter_id"],
+            source="topic",
+        )
+        if os.environ.get("MAILROOM_SYNC") == "1":
+            from agent_mailroom.pipeline.watcher import scan_inbox
+
+            scan_inbox()
+        return update_topic(topic["topic_id"], status="in_progress", doc_id=topic["topic_id"]) or topic
     return update_topic(topic["topic_id"], status="assigned") or topic
 
 

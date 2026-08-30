@@ -68,6 +68,61 @@ def load_manifest(doc_id: str) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def safe_filename(name: str | None) -> str:
+    base = Path(name or "document.txt").name
+    cleaned = base.replace("\x00", "").strip() or "document.txt"
+    return cleaned
+
+
+def enqueue_inbox(
+    raw: bytes,
+    filename: str,
+    *,
+    doc_id: str,
+    matter_id: str = "DEFAULT",
+    source: str = "upload",
+) -> Path:
+    """Park a file in the inbox with a sidecar. The watcher (or scan_inbox) claims it."""
+    name = safe_filename(filename)
+    dest = inbox_dir() / f"{doc_id}--{name}"
+    dest.write_bytes(raw)
+    write_inbox_meta(
+        dest,
+        {
+            "doc_id": doc_id,
+            "matter_id": matter_id,
+            "source": source,
+            "filename": name,
+        },
+    )
+    return dest
+
+
+def write_inbox_meta(path: Path, payload: dict) -> Path:
+    sidecar = path.with_suffix(path.suffix + ".meta")
+    sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return sidecar
+
+
+def claim_inbox(path: Path, doc_id: str) -> Path:
+    dest_dir = processing_dir(doc_id)
+    dest = dest_dir / path.name
+    if path.resolve() != dest.resolve():
+        dest = move_file(path, dest_dir, path.name)
+    sidecar = path.with_suffix(path.suffix + ".meta")
+    if sidecar.exists():
+        sidecar.unlink(missing_ok=True)
+    return dest
+
+
+def inbox_pending() -> list[Path]:
+    return [
+        path
+        for path in inbox_dir().iterdir()
+        if path.is_file() and not path.name.endswith(".meta") and not path.name.startswith(".")
+    ]
+
+
 def move_file(src: Path, dest_dir: Path, name: str | None = None) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / (name or src.name)
