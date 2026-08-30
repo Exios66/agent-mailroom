@@ -6,19 +6,20 @@ from typing import Any
 
 import httpx
 
-from agent_mailroom.config.loader import llm_provider_name
 from agent_mailroom.llm import mock
+from agent_mailroom.llm.jsonutil import parse_json_object
+from agent_mailroom.llm.providers import resolve_harness
 
 
 class LLMError(RuntimeError):
     pass
 
 
-def chat_json(agent: str, system: str, user: str) -> dict[str, Any]:
-    provider = llm_provider_name()
-    if provider == "mock":
+def chat_json(agent: str, system: str, user: str, *, agent_cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    provider, model, info = resolve_harness(agent, agent_cfg)
+    if provider.name == "mock":
         return _mock_route(agent, user)
-    return _http_json(system, user)
+    return _http_json(provider, model, system, user, info=info)
 
 
 def _mock_route(agent: str, user: str) -> dict[str, Any]:
@@ -40,7 +41,6 @@ def _mock_route(agent: str, user: str) -> dict[str, Any]:
         return mock.boss("conflict" in text.lower())
     if agent == "reporter":
         return {"report": mock.report("document", {})}
-    # specialists: first line is DOC_TYPE=
     doc_type = "contract"
     if text.startswith("DOC_TYPE="):
         doc_type = text.split("\n", 1)[0].split("=", 1)[1].strip()
@@ -48,34 +48,36 @@ def _mock_route(agent: str, user: str) -> dict[str, Any]:
     return mock.extract(doc_type, text)
 
 
-def _http_json(system: str, user: str) -> dict[str, Any]:
-    provider = llm_provider_name()
-    if provider == "ollama":
-        base = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
-        key = "ollama"
-        model = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
-    elif provider == "openai":
-        base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-        key = os.environ.get("OPENAI_API_KEY", "")
-        model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-    else:
-        base = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        key = os.environ.get("OPENROUTER_API_KEY", "")
-        model = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3.7-flash")
-    if not key and provider != "ollama":
-        raise LLMError(f"{provider} selected but no API key is configured")
+def _http_json(provider, model: str, system: str, user: str, *, info: dict[str, Any]) -> dict[str, Any]:
+    if not provider.base_url:
+        raise LLMError(f"{provider.name} has no base URL")
+    key = os.environ.get(provider.api_key_env, "").strip() if provider.api_key_env else ""
     payload = {
         "model": model,
         "temperature": 0.1,
         "response_format": {"type": "json_object"},
         "messages": [
-            {"role": "system", "content": system + "\nReply with a JSON object only."},
+            {"role": "system", "content": system + "\nReply with a JSON object only. The user message asks for json."},
             {"role": "user", "content": user},
         ],
     }
-    headers = {"Authorization": f"Bearer {key}"} if key else {}
-    with httpx.Client(timeout=120.0) as client:
-        response = client.post(f"{base.rstrip('/')}/chat/completions", json=payload, headers=headers)
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-    return json.loads(content)
+    headers = dict(provider.extra_headers)
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    url = f"{provider.base_url.rstrip('/')}/chat/completions"
+    last_error: Exception | None = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(url, json=payload, headers=headers)
+                if response.status_code in {429, 500, 502, 503} and attempt < 2:
+                    last_error = LLMError(f"{provider.name} {response.status_code}")
+                    continue
+                response.raise_for_status()
+                content = response.json()["choices"][0]["message"]["content"]
+            return parse_json_object(content)
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError, KeyError) as exc:
+            last_error = exc
+            if attempt >= 2:
+                break
+    raise LLMError(f"{info.get('active')} harness failed for model {model}: {last_error}")

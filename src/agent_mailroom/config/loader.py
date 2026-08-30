@@ -61,4 +61,15 @@ def accepted_extensions() -> set[str]:
 
 
 def llm_provider_name() -> str:
-    return os.environ.get("MAILROOM_LLM_PROVIDER", "mock").strip().lower()
+    from agent_mailroom.llm.providers import requested_provider
+
+    return requested_provider()
+
+
+def agent_config(name: str) -> dict[str, Any]:
+    meta = agent_roster().get(name) or {}
+    return {
+        "provider": meta.get("provider"),
+        "model": meta.get("model"),
+        "role": meta.get("role"),
+    }

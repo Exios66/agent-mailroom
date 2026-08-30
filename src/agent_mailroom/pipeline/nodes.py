@@ -17,7 +17,12 @@ def node_ingest(state: RunState) -> RunState:
 
 def node_classify(state: RunState, *, reviewer: bool = False) -> RunState:
     agent = "sorter_reviewer" if reviewer else "sorter"
-    result = run_agent(agent, state.doc_text[:12000])
+    try:
+        result = run_agent(agent, state.doc_text[:12000])
+    except Exception as exc:
+        result = {"doc_type": "unknown", "confidence": 0.0, "reasoning": str(exc), "error": str(exc)}
+    if result.get("error"):
+        state.escalation_reason = str(result["error"])
     state.doc_type = result.get("doc_type") or state.doc_type
     state.contract_subtype = result.get("contract_subtype") or state.contract_subtype
     state.doc_subclass = result.get("doc_subclass") or state.doc_subclass
@@ -34,7 +39,12 @@ def node_classify(state: RunState, *, reviewer: bool = False) -> RunState:
 def node_extract(state: RunState) -> RunState:
     specialist = specialist_for(state.doc_type or "contract")
     user = f"DOC_TYPE={state.doc_type}\n{state.doc_text[:80000]}"
-    result = run_agent(specialist, user)
+    try:
+        result = run_agent(specialist, user)
+    except Exception as exc:
+        result = {"confidence": 0.0, "error": str(exc)}
+    if result.get("error"):
+        state.escalation_reason = str(result["error"])
     conf, flags = guard_extraction(state.doc_type, result, result.get("confidence"))
     state.extracted_data = result
     state.extraction_confidence = conf

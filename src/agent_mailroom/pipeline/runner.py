@@ -192,19 +192,32 @@ def run_document(
             node = "classify"
             continue
         if node in {"classify", "retry_classify"}:
-            nodes.node_classify(state, reviewer=False)
+            try:
+                nodes.node_classify(state, reviewer=False)
+            except Exception as exc:
+                state.escalation_reason = f"classify failed: {exc}"
+                state.doc_type = state.doc_type or "unknown"
+                return park_for_review(state)
             _audit(state, "classified", "sorter", {"doc_type": state.doc_type, "confidence": state.classification_confidence})
             _persist(state)
             _broadcast(state, node, actor)
             node = routing.after_classify(state, retry=node == "retry_classify")
             continue
         if node == "review_classify":
-            nodes.node_classify(state, reviewer=True)
+            try:
+                nodes.node_classify(state, reviewer=True)
+            except Exception as exc:
+                state.escalation_reason = f"review-classify failed: {exc}"
+                return park_for_review(state)
             _broadcast(state, node, actor)
             node = routing.after_review_classify(state)
             continue
         if node in {"extract", "retry_extract"}:
-            nodes.node_extract(state)
+            try:
+                nodes.node_extract(state)
+            except Exception as exc:
+                state.escalation_reason = f"extract failed: {exc}"
+                return park_for_review(state)
             _audit(state, "extracted", specialist_for(state.doc_type or "contract"), {"confidence": state.extraction_confidence})
             if state.conflict_detected:
                 _audit(state, "conflict_detected", "boss", {"reason": state.escalation_reason})
@@ -213,17 +226,29 @@ def run_document(
             node = routing.after_extract(state)
             continue
         if node == "judge_verify":
-            nodes.node_judge(state)
+            try:
+                nodes.node_judge(state)
+            except Exception as exc:
+                state.escalation_reason = f"judge failed: {exc}"
+                return park_for_review(state)
             _broadcast(state, node, actor)
             node = routing.after_judge(state)
             continue
         if node == "arbiter":
-            nodes.node_arbiter(state)
+            try:
+                nodes.node_arbiter(state)
+            except Exception as exc:
+                state.escalation_reason = f"arbiter failed: {exc}"
+                return park_for_review(state)
             _broadcast(state, node, actor)
             node = routing.after_arbiter(state)
             continue
         if node == "boss_escalation":
-            nodes.node_boss(state)
+            try:
+                nodes.node_boss(state)
+            except Exception as exc:
+                state.escalation_reason = f"boss failed: {exc}"
+                return park_for_review(state)
             _audit(state, "boss_adjudicated", "boss", {"decision": state.review_decision})
             _broadcast(state, node, actor)
             node = routing.after_boss(state)

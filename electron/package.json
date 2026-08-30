@@ -1,0 +1,14 @@
+{
+  "name": "the-mailroom-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hardened Electron shell for The Mailroom office",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:attached": "electron . --attached"
+  },
+  "devDependencies": {
+    "electron": "^36.4.0"
+  }
+}

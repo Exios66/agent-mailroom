@@ -9,9 +9,16 @@ def test_health_and_meta():
     assert health["status"] == "ok"
     assert health["checks"]["watcher"] == "ok"
     assert health["checks"]["watcher_embedded"] is False
+    assert health["checks"]["tilesets"]["present"] is True
+    assert health["checks"]["tilesets"]["credit"]["author"] == "LimeZu"
     meta = client.get("/v1/meta").json()
     assert "contract" in meta["doc_classes"]
     assert "boss" in meta["agents"]
+    providers = client.get("/v1/providers").json()
+    assert providers["active"] == "mock"
+    datasets = client.get("/v1/datasets").json()
+    assert datasets["org"] == "Lucius-Morningstar"
+    assert any(row["slug"] == "docclass-pilot" for row in datasets["pipeline"])
 
 
 def test_ops_status():

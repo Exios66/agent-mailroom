@@ -57,8 +57,8 @@ doc_classes:
     specialist: insurance_claims_specialist
     stamp: "#b18ec2"
 
-# Office-floor roster. character ids are original procedural sprites
-# inspired by a paper-company sitcom cast (parody, not NBC assets).
+# Office-floor roster. character ids are original procedural sprites.
+# Optional per-agent harness: provider / model (else OpenRouter defaults).
 agents:
   sorter:
     label: Sorter
@@ -134,7 +134,7 @@ agents:
     character: creed
     room: archive
 
-# Speech-act colors for flying envelopes (Munder-style).
+# Speech-act colors for flying envelopes.
 hive_acts:
   request: "#4F9FAF"
   query: "#9482D3"

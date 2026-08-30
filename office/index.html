@@ -3,56 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Munder Mailroom — Scranton Floor</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+  <title>The Mailroom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/office/css/tokens.css">
-  <link rel="stylesheet" href="/office/css/office.css">
+  <link rel="stylesheet" href="/office/css/tokens.css?v=limezu1">
+  <link rel="stylesheet" href="/office/css/office.css?v=limezu1">
   <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
 </head>
 <body>
   <header class="chrome">
-    <div class="brand">MUNDER MAILROOM<small>Scranton branch · paper &amp; filings</small></div>
-    <nav class="tabs" id="tabs">
-      <button data-tab="floor" class="active">Floor</button>
-      <button data-tab="topics">Topics</button>
-      <button data-tab="review">Review</button>
-      <button data-tab="hive">Hive</button>
-      <button data-tab="metrics">Metrics</button>
-      <button data-tab="console">Console</button>
+    <div class="brand">THE MAILROOM<small>classify · extract · judge · archive</small></div>
+    <nav class="tabs" id="tabs" data-testid="office-tabs">
+      <button data-tab="floor" data-testid="tab-floor" class="active">Floor</button>
+      <button data-tab="datasets" data-testid="tab-datasets">Datasets</button>
+      <button data-tab="topics" data-testid="tab-topics">Topics</button>
+      <button data-tab="review" data-testid="tab-review">Review</button>
+      <button data-tab="hive" data-testid="tab-hive">Hive</button>
+      <button data-tab="metrics" data-testid="tab-metrics">Metrics</button>
+      <button data-tab="console" data-testid="tab-console">Console</button>
     </nav>
-    <button class="action" id="brief-btn">Brief floor</button>
-    <button class="action primary" id="demo-btn">Drop a pile</button>
+    <button class="action" id="brief-btn" data-testid="brief-btn">Brief floor</button>
+    <button class="action primary" id="demo-btn" data-testid="demo-btn">Drop a pile</button>
     <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
       Upload
-      <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx">
+      <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx" data-testid="upload">
     </label>
   </header>
 
   <main class="shell">
     <section class="floor-wrap">
-      <canvas id="floor" width="1280" height="768" aria-label="Office floor"></canvas>
-      <div class="legend">Click an avatar, envelope, or desk · gold thought = live work · maroon office = the boss</div>
+      <canvas id="floor" width="1280" height="768" aria-label="Mailroom floor" data-testid="floor-canvas"></canvas>
+      <div class="legend" data-testid="floor-legend">Click an avatar, envelope, or desk · gold thought = live work · maroon office = the boss</div>
     </section>
     <aside class="desk">
       <h2 id="panel-title">Command Center</h2>
       <div class="body">
         <section class="view active" id="view-floor">
-          <p class="muted">The floor is the pipeline. Avatars walk the hall, sit when a filing lands, and mutter thought clouds. Envelopes fly desk to desk.</p>
-          <div id="inspect"></div>
+          <p class="muted">The floor is the llm-mailroom pipeline. Avatars walk the hall, sit when a filing lands, and mutter thought clouds. Envelopes fly desk to desk.</p>
+          <div id="inspect" data-testid="inspect"></div>
+        </section>
+        <section class="view" id="view-datasets">
+          <form id="dataset-form" class="card">
+            <h3>Lucius Morningstar corpora</h3>
+            <p class="muted">Pull Hub rows onto the inbox. The watcher claims each file once — same path as upload.</p>
+            <label>Corpus
+              <select id="dataset-corpus" data-testid="dataset-corpus"></select>
+            </label>
+            <label>Rows <input id="dataset-limit" type="number" min="1" max="25" value="3"></label>
+            <label>Matter <input id="dataset-matter" value="HUB"></label>
+            <div class="row">
+              <button type="submit" class="action primary" data-testid="dataset-pull">Pull onto floor</button>
+            </div>
+          </form>
+          <div id="dataset-list"></div>
         </section>
         <section class="view" id="view-topics">
           <form id="topic-form" class="card">
             <h3>Brief the floor</h3>
             <p class="muted"><b>Queue</b> parks the brief. <b>Launch now</b> delivers an envelope to the desk. Filing-like briefs also enter the pipeline.</p>
             <label>Subject <input id="topic-subject" name="subject" required placeholder="Northwind unpaid invoices"></label>
-            <label>Matter <input id="topic-matter" name="matter_id" value="SCRANTON"></label>
+            <label>Matter <input id="topic-matter" name="matter_id" value="MAILROOM"></label>
             <label>Route
               <select id="topic-route" name="route_to">
-                <option value="boss">Boss (Michael)</option>
-                <option value="sorter">Sorter (Pam)</option>
-                <option value="contracts_specialist">Contracts (Dwight)</option>
-                <option value="judge">Judge (Oscar)</option>
+                <option value="boss">Boss</option>
+                <option value="sorter">Sorter</option>
+                <option value="contracts_specialist">Contracts</option>
+                <option value="judge">Judge</option>
               </select>
             </label>
             <label>Brief <textarea id="topic-body" name="body" rows="6" placeholder="What should the office address?"></textarea></label>
@@ -82,9 +99,11 @@
   <footer class="statusbar">
     <span id="lamp">SOURCE: LIVE PIPELINE</span>
     <span id="counts">0 on the floor</span>
-    <span>Provider: <span id="provider">mock</span></span>
+    <span>Provider: <span id="provider">openrouter</span></span>
+    <span id="theme-lamp" data-testid="theme-lamp">Floor: loading</span>
+    <a id="limezu-credit" data-testid="limezu-credit" hidden href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">Tiles: LimeZu</a>
   </footer>
 
-  <script type="module" src="/office/js/app.js"></script>
+  <script type="module" src="/office/js/app.js?v=limezu1"></script>
 </body>
 </html>

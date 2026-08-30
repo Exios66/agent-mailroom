@@ -1,10 +1,12 @@
 # Architecture
 
-Agent Mailroom is a self-contained hybrid:
+The Mailroom is a self-contained hybrid:
 
 - **Pipeline** — the llm-mailroom document state machine (classify → extract → judge → report → archive), including filesystem bins, a SQLite catalog, and a SHA-256 hash-chained audit log.
-- **Hive** — Munder-style atomic mailboxes. Agents write JSON to `outbox/`; the router delivers to `inbox/` and the office draws a flying envelope.
-- **Office** — an original pixel floor (no LimeZu tilesets) with procedural sitcom-cast avatars, SNES chrome, and maroon/gold Dunder-Mifflin branding.
+- **Hive** — atomic mailboxes. Agents write JSON to `outbox/`; the router delivers to `inbox/` and the office draws a flying envelope.
+- **Office** — a walking pixel floor branded **The Mailroom**. LimeZu Modern Interiors tilesets paint the rooms when `office/tiles/` is present; the original procedural rooms are the fallback. A hardened Electron shell can wrap the same `/office/` UI the browser already uses.
+- **Harnesses** — OpenRouter is primary. OpenAI, Ollama, vLLM, generic OpenAI-compatible, and mock are registered fallbacks.
+- **Hub corpora** — Lucius-Morningstar datasets pull through the same inbox the watcher already drains.
 
 Uploads, demo piles, and filing-like topics **only write the inbox** (plus a `.meta` sidecar). The embedded watcher claims each file into `processing/` and runs the graph once. `MAILROOM_SYNC=1` drains the inbox in-request so tests stay deterministic. Do not call the runner on a file that is still sitting in the inbox — that double-runs.
 
@@ -26,6 +28,10 @@ Routing thresholds live in [`src/agent_mailroom/config/taxonomy.yaml`](../src/ag
 
 The office is static files under `office/` served by the same FastAPI process. Live updates go over `/ws`. The display contract (`stage`, `doc_type`, review dispositions) matches The-Mailroom / llm-mailroom so this repo can sit at the center of that constellation.
 
+**LimeZu floor.** `office/js/tiled.js` loads `office/tiles/manifest.json` + `maps/office.tmj` and blits the three LimeZu atlases onto the canvas. Spawn points from the Tiled map become pipeline desks (CEO → boss, organizer → sorter, PCs → specialists, architect/UX → judge/arbiter). Collision tiles drive walking. If a PNG or the manifest is missing, `office/js/layout.js` keeps the procedural 40×24 rooms so browser tests still have a floor.
+
+**Electron.** `electron/main.js` loads `http://127.0.0.1:<port>/office/` only. Renderer: no Node, sandboxed, context-isolated. Preload IPC is `version` + LimeZu credits. The FastAPI process sends the same CSP (`script-src 'self'`, no `unsafe-eval`) on `/office` so Playwright and Electron exercise one UI.
+
 **Live topics.** Operators can **queue** or **launch** briefs while the floor is running.
 
 - `POST /v1/topics` with `action=queue` parks a row (`status=queued`). No hive mail yet.
@@ -33,3 +39,7 @@ The office is static files under `office/` served by the same FastAPI process. L
 - `POST /v1/topics/{id}/complete` marks the brief done.
 
 The Topics tab is the command-center composer for both paths.
+
+**Hub pull.** `POST /v1/datasets/pull` reads the Hugging Face Dataset Viewer (`datasets-server.huggingface.co/rows`), adapts each row with the same `adapt_hub_row` shapes as llm-mailroom (`docclass`, `enron`, `cms_inline`, `braintrust_mirror`), writes inbox + sidecar, and lets the watcher claim the file. Default corpus is `docclass-pilot`. LegalBench is catalogued but not ingestable.
+
+**LLM failures** park the document on human review instead of crashing the watcher loop. JSON replies are parsed through a fence-tolerant decoder.
