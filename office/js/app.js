@@ -167,8 +167,10 @@ document.getElementById("topic-form").addEventListener("submit", async (ev) => {
   const body = document.getElementById("topic-body").value;
   const matterId = document.getElementById("topic-matter").value || "DEFAULT";
   const routeTo = document.getElementById("topic-route").value;
+  const ingestEl = document.getElementById("topic-ingest");
+  const ingest = ingestEl?.checked ? true : ingestEl && !ingestEl.checked ? false : null;
   if (!subject) return;
-  await postJSON("/v1/topics", { subject, body, matter_id: matterId, route_to: routeTo, action });
+  await postJSON("/v1/topics", { subject, body, matter_id: matterId, route_to: routeTo, action, ingest });
   document.getElementById("topic-subject").value = "";
   document.getElementById("topic-body").value = "";
   refresh();
@@ -179,6 +181,7 @@ document.getElementById("upload").addEventListener("change", async (ev) => {
   const matter = document.getElementById("inbox-matter")?.value || "UPLOAD";
   if (file) await uploadFile(file, matter);
   ev.target.value = "";
+  refresh();
 });
 
 document.getElementById("inbox-upload")?.addEventListener("change", async (ev) => {
@@ -520,13 +523,19 @@ function renderMetrics(runs, health, ops) {
       <button id="sweep-btn" class="action">Boss sweep</button>
       <button id="recover-btn" class="action">Recover stuck</button>
     </div>
+    <p class="muted" id="ops-note">${escapeHtml(window.__MAILROOM_OPS_NOTE__ || "")}</p>
   `;
   document.getElementById("sweep-btn")?.addEventListener("click", async () => {
-    await postJSON("/v1/ops/sweep", {});
+    const result = await postJSON("/v1/ops/sweep", {});
+    window.__MAILROOM_OPS_NOTE__ = `Sweep: ${result.escalated || 0} hive pings · review ${result.review || 0} · returns ${result.failed || 0} · reconsider ${result.reconsider || 0}`;
     refresh();
   });
   document.getElementById("recover-btn")?.addEventListener("click", async () => {
-    await postJSON("/v1/ops/recover", {});
+    const result = await postJSON("/v1/ops/recover", {});
+    const names = (result.recovered || []).map((row) => row.doc_id).slice(0, 4).join(", ");
+    window.__MAILROOM_OPS_NOTE__ = result.count
+      ? `Recovered ${result.count}${names ? `: ${names}` : ""}`
+      : "Nothing stuck to recover";
     refresh();
   });
 }

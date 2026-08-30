@@ -30,6 +30,7 @@ def test_office_pages_send_csp_and_hardening_headers():
     assert 'data-tab="matters"' in html
     assert 'data-tab="failed"' in html
     assert 'data-testid="lookup-q"' in html
+    assert 'data-testid="topic-ingest"' in html
     js = client.get("/office/js/app.js")
     assert js.status_code == 200
     assert "javascript" in js.headers.get("content-type", "")
