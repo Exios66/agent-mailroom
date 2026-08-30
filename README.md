@@ -18,7 +18,8 @@ Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom). 
 - **Hive mailboxes** — one JSON file per message, single-writer desks, speech acts (`request`, `inform`, `query`, …)
 - **Office floor** — LimeZu Modern Interiors rooms (procedural fallback), walking avatars, thought clouds, flying envelopes, review siding, datasets + metrics + console
 - **Desktop shell** — optional hardened Electron window around the same `/office/` UI the browser uses
-- **SQLite-first** — `data/mailroom.db` + filesystem bins. No Docker required.
+- **SQLite-first** — `data/mailroom.db` + filesystem bins. Local venv or Docker.
+- **Docker** — `Dockerfile` + Compose for the same `/office/` UI and `/v1` API
 
 ## Quick start
 
@@ -34,6 +35,15 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000). **Drop a pile** sends the H
 
 Without an OpenRouter key the floor uses the mock harness so you can still walk the pipeline.
 
+### Docker
+
+```bash
+cp -n .env.example .env   # optional keys; mock works without them
+docker compose up --build
+```
+
+Open [http://127.0.0.1:8000/office/](http://127.0.0.1:8000/office/). Compose binds the API on host port `${MAILROOM_PORT:-8000}`, persists SQLite + bins in `./data`, and forces `MAILROOM_HOST=0.0.0.0` inside the container. To reach Ollama on the host, set `OLLAMA_BASE_URL=http://host.docker.internal:11434/v1` in `.env`.
+
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/upload \
   -F "file=@fixtures/samples/harborpoint_msa.txt" \
@@ -47,7 +57,7 @@ curl -X POST http://127.0.0.1:8000/v1/datasets/pull \
 ## Providers
 
 | Harness | Role |
-|---|---|
+| --- | --- |
 | `openrouter` | **Primary.** Set `OPENROUTER_API_KEY`. Default model `qwen/qwen3.7-flash`. |
 | `openai` | Official OpenAI or an `OPENAI_BASE_URL` compatible proxy |
 | `ollama` | Local OpenAI-compatible server |
@@ -60,7 +70,7 @@ curl -X POST http://127.0.0.1:8000/v1/datasets/pull \
 ## The floor
 
 | Desk | Agent |
-|---|---|
+| --- | --- |
 | Reception | Sorter / reviewer |
 | Bay A | Contracts / corporate records |
 | Bay B | Correspondence / compliance / claims |
@@ -89,7 +99,7 @@ The window loads loopback `/office/` only: `contextIsolation`, `sandbox`, no Nod
 Same producer shape as llm-mailroom. Prefer `/v1`.
 
 | Method | Path | Role |
-|---|---|---|
+| --- | --- | --- |
 | `GET` | `/v1/health` | Liveness + watcher + harness |
 | `GET` | `/v1/providers` | Requested / active harness and catalog |
 | `GET` | `/v1/datasets` | Lucius-Morningstar corpus registry |

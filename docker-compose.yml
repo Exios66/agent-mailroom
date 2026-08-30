@@ -1,0 +1,21 @@
+services:
+  mailroom:
+    build: .
+    image: agent-mailroom:local
+    ports:
+      - "${MAILROOM_PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Always listen on all interfaces inside the container.
+      MAILROOM_HOST: "0.0.0.0"
+      MAILROOM_PORT: "8000"
+      MAILROOM_BASE_DIR: /app/data
+      # Reach Ollama (or other local servers) on the host from the container:
+      # OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

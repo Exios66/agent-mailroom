@@ -1,4 +1,4 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=limezu1";
+import { CAST, ROSTER_CAST } from "./cast.js?v=limezu2";
 import {
   TILE,
   SCALE,
@@ -8,8 +8,8 @@ import {
   isWalkable,
   tileToPx,
   getDesks,
-} from "./layout.js?v=limezu1";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=limezu1";
+} from "./layout.js?v=limezu2";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=limezu2";
 
 export { TILE, SCALE, deskForRun, tileToPx, getDesks };
 export const DESKS = new Proxy(
@@ -606,9 +606,6 @@ export class OfficeFloor {
     }
 
     const people = Object.values(this.avatars).sort((a, b) => a.y - b.y);
-    for (const avatar of people) {
-      drawAvatar(ctx, avatar.character, avatar.x, avatar.y, avatar.status, avatar.facing, avatar.phase);
-    }
 
     for (const env of this.envelopes) {
       const t = Math.min(1, env.t);
@@ -636,6 +633,11 @@ export class OfficeFloor {
     if (layout.tiled?.above) {
       ctx.drawImage(layout.tiled.above, 0, 0);
       this._drawMonitors(ctx);
+    }
+
+    // Avatars after furniture-above so desk tops don't bury the cast.
+    for (const avatar of people) {
+      drawAvatar(ctx, avatar.character, avatar.x, avatar.y, avatar.status, avatar.facing, avatar.phase);
     }
 
     let lift = 0;

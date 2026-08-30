@@ -1,6 +1,6 @@
-import { OfficeFloor } from "./floor.js?v=limezu1";
-import { CAST, ROSTER_CAST } from "./cast.js?v=limezu1";
-import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=limezu1";
+import { OfficeFloor } from "./floor.js?v=limezu3";
+import { CAST, ROSTER_CAST } from "./cast.js?v=limezu3";
+import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=limezu3";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");
@@ -56,6 +56,7 @@ function switchTab(name) {
   document.querySelectorAll(".view").forEach((view) => {
     view.classList.toggle("active", view.id === `view-${name}`);
   });
+  document.body.dataset.panel = name;
   document.getElementById("panel-title").textContent = {
     floor: "Command Center",
     datasets: "Hub Datasets",
@@ -73,7 +74,15 @@ document.getElementById("tabs").addEventListener("click", (ev) => {
 });
 
 document.getElementById("demo-btn").addEventListener("click", async () => {
-  await postJSON("/v1/demo", { sample: "all", matter_id: "DEMO" });
+  switchTab("floor");
+  try {
+    const result = await postJSON("/v1/demo", { sample: "all", matter_id: "DEMO" });
+    const n = result?.started?.length ?? 0;
+    appendLog({ type: "demo", subject: `dropped ${n} sample filings` });
+    await refresh();
+  } catch (err) {
+    appendLog({ type: "error", subject: String(err) });
+  }
 });
 
 document.getElementById("dataset-form").addEventListener("submit", async (ev) => {
@@ -285,6 +294,7 @@ function markTheme() {
 }
 
 wireCredits();
+document.body.dataset.panel = "floor";
 connectWS((event) => {
   floor.ingestEvent(event);
   appendLog(event);

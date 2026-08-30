@@ -1,4 +1,4 @@
-import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=limezu1";
+import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=limezu2";
 
 export const TILE = 16;
 export const SCALE = 2;
