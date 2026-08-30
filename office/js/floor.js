@@ -1,4 +1,4 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom8";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom9";
 import {
   TILE,
   SCALE,
@@ -10,8 +10,8 @@ import {
   tileToPx,
   getDesks,
   getBins,
-} from "./layout.js?v=mailroom8";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom8";
+} from "./layout.js?v=mailroom9";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom9";
 
 export { TILE, SCALE, deskForRun, binForRun, tileToPx, getDesks, getBins };
 
@@ -236,9 +236,6 @@ function drawFurniture(ctx) {
   ctx.fillRect(hopper.x - 8, hopper.y + 4, 16, 6);
   ctx.fillStyle = "#7d97b5";
   ctx.fillRect(hopper.x - 6, hopper.y - 2, 12, 8);
-  ctx.fillStyle = "#fff8e7";
-  ctx.font = "4px monospace";
-  ctx.fillText("INBOX", hopper.x - 8, hopper.y + 3);
 }
 
 function drawMiniEnvelope(ctx, x, y, stamp) {
@@ -250,9 +247,25 @@ function drawMiniEnvelope(ctx, x, y, stamp) {
   ctx.fillRect(x - 4, y - 3, 8, 2);
 }
 
-function drawTray(ctx, bin, pile, hover) {
+function trayLabelPos(bin) {
   const p = tileToPx(bin.tile);
   const offset = bin.labelOffset || [0, 0];
+  const anchor = bin.labelAnchor || "above";
+  const lift = anchor === "above" ? -20 : anchor === "below" ? 18 : -20;
+  let align = "center";
+  let x = p.x + offset[0];
+  if (anchor === "above-left") {
+    align = "left";
+    x = p.x - 10 + offset[0];
+  } else if (anchor === "above-right") {
+    align = "right";
+    x = p.x + 10 + offset[0];
+  }
+  return { x, y: p.y + lift + offset[1], align };
+}
+
+function drawTray(ctx, bin, pile, hover) {
+  const p = tileToPx(bin.tile);
   ctx.fillStyle = "#6b5340";
   ctx.fillRect(p.x - 11, p.y - 2, 22, 11);
   ctx.fillStyle = hover ? "#fff8e7" : bin.color || "#c9a66b";
@@ -266,7 +279,8 @@ function drawTray(ctx, bin, pile, hover) {
     drawMiniEnvelope(ctx, p.x + ox, p.y + oy, run.stamp);
   });
   const label = bin.label || "BIN";
-  drawFloorLabel(ctx, label, p.x + offset[0], p.y - 14 + offset[1], { tone: "gold" });
+  const pos = trayLabelPos(bin);
+  drawFloorLabel(ctx, label, pos.x, pos.y, { tone: "gold", align: pos.align });
   if (pile?.length) {
     ctx.fillStyle = "#1a1320";
     ctx.fillRect(p.x + 6, p.y - 12, 8, 7);
@@ -283,19 +297,35 @@ function drawFloorLabel(ctx, text, x, y, { tone = "cream", align = "center" } = 
   ctx.textBaseline = "middle";
   const pad = 4;
   const tw = ctx.measureText(text).width + pad * 2;
-  const left = align === "center" ? x - tw / 2 : x;
+  let left = x - tw / 2;
+  if (align === "left") left = x;
+  else if (align === "right") left = x - tw;
   ctx.fillStyle = "rgba(26,19,32,0.88)";
   ctx.fillRect(left, y - 5, tw, 10);
   ctx.fillStyle = tone === "gold" ? "#f4d35e" : "#fff8e7";
-  const tx = align === "center" ? x - ctx.measureText(text).width / 2 : x + pad;
+  let tx = x - ctx.measureText(text).width / 2;
+  if (align === "left") tx = x + pad;
+  else if (align === "right") tx = x - pad - ctx.measureText(text).width;
   ctx.fillText(text, tx, y);
+}
+
+function deskNearBin(desk) {
+  for (const bin of Object.values(getBins())) {
+    const dx = Math.abs(desk.tile[0] - bin.tile[0]);
+    const dy = Math.abs(desk.tile[1] - bin.tile[1]);
+    if (dx <= 3 && dy <= 2) return true;
+  }
+  return false;
 }
 
 function drawDeskLabel(ctx, desk) {
   const p = tileToPx(desk.tile);
   const text = desk.label || desk.agent || "";
   if (!text) return;
-  drawFloorLabel(ctx, text, p.x, p.y + 14, { tone: "cream" });
+  const offset = desk.labelOffset || [0, 0];
+  const place = desk.labelPosition || (deskNearBin(desk) ? "above" : "below");
+  const y = place === "above" ? p.y - 18 + offset[1] : p.y + 14 + offset[1];
+  drawFloorLabel(ctx, text, p.x + offset[0], y, { tone: "cream" });
 }
 
 function drawDeskSet(ctx, desk, working) {
@@ -316,11 +346,32 @@ function drawDeskSet(ctx, desk, working) {
   ctx.fillRect(p.x - 6, p.y - 2, 3, 2);
 }
 
+function roomHasBin(room) {
+  for (const bin of Object.values(getBins())) {
+    const [tx, ty] = bin.tile;
+    if (tx >= room.x && tx < room.x + room.w && ty >= room.y && ty < room.y + room.h) return true;
+  }
+  return false;
+}
+
 function drawRoomPlates(ctx) {
   for (const room of layout.rooms) {
-    const cx = (room.x + room.w / 2) * TILE;
-    const cy = (room.y + 0.65) * TILE;
-    drawFloorLabel(ctx, room.name, cx, cy, { tone: "gold" });
+    if (room.hideRoomPlate || roomHasBin(room)) continue;
+    const anchor = room.labelAnchor || "center";
+    let cx = (room.x + room.w / 2) * TILE;
+    let cy = (room.y + 0.65) * TILE;
+    let align = "center";
+    if (anchor === "top") {
+      cy = (room.y + 0.35) * TILE;
+    } else if (Array.isArray(room.labelAnchor)) {
+      cx = room.labelAnchor[0] * TILE + TILE / 2;
+      cy = room.labelAnchor[1] * TILE + TILE / 2;
+    }
+    if (room.labelOffset) {
+      cx += room.labelOffset[0] || 0;
+      cy += room.labelOffset[1] || 0;
+    }
+    drawFloorLabel(ctx, room.name, cx, cy, { tone: "gold", align });
   }
 }
 
@@ -340,9 +391,6 @@ function drawProceduralGround(ctx) {
     ctx.strokeStyle = room.trim || "#8b6f47";
     ctx.lineWidth = 2;
     ctx.strokeRect(room.x * TILE + 1, room.y * TILE + 1, room.w * TILE - 2, room.h * TILE - 2);
-    const cx = (room.x + room.w / 2) * TILE;
-    const cy = (room.y + 0.65) * TILE;
-    drawFloorLabel(ctx, room.name, cx, cy, { tone: "gold" });
   }
 }
 

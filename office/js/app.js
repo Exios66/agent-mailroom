@@ -1,7 +1,7 @@
-import { OfficeFloor } from "./floor.js?v=mailroom8";
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom8";
-import { connectWS, getJSON, getToken, postJSON, setToken, uploadFile } from "./api.js?v=mailroom8";
-import { HistoryView } from "./history.js?v=mailroom8";
+import { OfficeFloor } from "./floor.js?v=mailroom9";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom9";
+import { connectWS, getJSON, getToken, postJSON, setToken, uploadFile } from "./api.js?v=mailroom9";
+import { HistoryView } from "./history.js?v=mailroom9";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");

@@ -46,12 +46,12 @@
   ],
   "desks": {
     "desk-boss": { "spawn": "desk-ceo", "agent": "boss", "label": "Michael", "face": "down" },
-    "desk-reception": { "spawn": "desk-agent-organizer", "agent": "sorter", "label": "Pam", "face": "up" },
-    "desk-reception-2": { "spawn": "warroom-seat", "agent": "sorter_reviewer", "label": "Kelly", "face": "up" },
+    "desk-reception": { "spawn": "desk-agent-organizer", "agent": "sorter", "label": "Pam", "face": "up", "labelPosition": "above" },
+    "desk-reception-2": { "spawn": "warroom-seat", "agent": "sorter_reviewer", "label": "Kelly", "face": "up", "labelPosition": "above" },
     "desk-judge": { "spawn": "desk-chief-architect", "agent": "judge", "label": "Oscar", "face": "up" },
     "desk-arbiter": { "spawn": "desk-ui-ux-expert", "agent": "arbiter", "label": "Stanley", "face": "up" },
-    "desk-archive": { "spawn": "desk-backend-engineer", "agent": "archivist", "label": "Creed", "face": "up" },
-    "desk-report": { "spawn": "desk-product-manager", "agent": "reporter", "label": "Ryan", "face": "up" },
+    "desk-archive": { "spawn": "desk-backend-engineer", "agent": "archivist", "label": "Creed", "face": "up", "labelPosition": "above" },
+    "desk-report": { "spawn": "desk-product-manager", "agent": "reporter", "label": "Ryan", "face": "up", "labelPosition": "above" },
     "desk-contracts": { "spawn": "pc-1", "agent": "contracts_specialist", "label": "Dwight", "face": "up" },
     "desk-corporate": { "spawn": "pc-2", "agent": "corporate_records_specialist", "label": "Angela", "face": "up" },
     "desk-correspondence": { "spawn": "pc-3", "agent": "correspondence_specialist", "label": "Jim", "face": "up" },
@@ -69,11 +69,11 @@
     { "id": "cafe", "name": "CAFE", "x": 24, "y": 11, "w": 8, "h": 9 }
   ],
   "bins": {
-    "inbox": { "spawn": "bin-inbox", "label": "INBOX", "tab": "inbox", "color": "#7d97b5", "labelOffset": [-12, 0] },
-    "classified": { "spawn": "bin-classified", "label": "SORTED", "tab": "inbox", "color": "#f4d35e", "labelOffset": [12, 0] },
-    "review": { "spawn": "bin-review", "label": "REVIEW", "tab": "review", "color": "#f4d35e", "labelOffset": [0, -2] },
-    "archive": { "spawn": "bin-archive", "label": "ARCHIVE", "tab": "archive", "color": "#5ca97a", "labelOffset": [-10, 0] },
-    "failed": { "spawn": "bin-failed", "label": "RETURNS", "tab": "failed", "color": "#d96a62", "labelOffset": [10, 0] }
+    "inbox": { "spawn": "bin-inbox", "label": "INBOX", "tab": "inbox", "color": "#7d97b5", "labelAnchor": "above-left", "labelOffset": [0, -2] },
+    "classified": { "spawn": "bin-classified", "label": "SORTED", "tab": "inbox", "color": "#f4d35e", "labelAnchor": "above-right", "labelOffset": [0, -2] },
+    "review": { "spawn": "bin-review", "label": "REVIEW", "tab": "review", "color": "#f4d35e", "labelAnchor": "above", "labelOffset": [0, -2] },
+    "archive": { "spawn": "bin-archive", "label": "ARCHIVE", "tab": "archive", "color": "#5ca97a", "labelAnchor": "above-left", "labelOffset": [0, -4] },
+    "failed": { "spawn": "bin-failed", "label": "RETURNS", "tab": "failed", "color": "#d96a62", "labelAnchor": "above-right", "labelOffset": [0, -4] }
   },
   "wander": ["entrance", "cafe-seat-1", "cafe-seat-2", "cafe-stand-coffee", "cafe-stand-vending"],
   "monitor": {
