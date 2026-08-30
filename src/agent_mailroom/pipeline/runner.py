@@ -9,6 +9,7 @@ from agent_mailroom.hive.mailbox import deliver
 from agent_mailroom.pipeline import nodes, routing
 from agent_mailroom.pipeline.bins import (
     archive_dir,
+    copy_classified,
     ensure_bins,
     failed_dir,
     move_file,
@@ -20,7 +21,7 @@ from agent_mailroom.pipeline.events import emit
 from agent_mailroom.pipeline.state import RunState
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 from agent_mailroom.storage.audit import write_audit
-from agent_mailroom.storage.catalog import upsert_document
+from agent_mailroom.storage.catalog import touch_matter, upsert_document
 
 STAGE_FOR_NODE = {
     "ingest": "ingest",
@@ -78,6 +79,7 @@ def _persist(state: RunState, *, stage: PipelineStage | None = None) -> Document
         trace_id=state.doc_id,
     )
     upsert_document(manifest)
+    touch_matter(state.matter_id)
     write_manifest(state.doc_id, manifest.model_dump(mode="json"))
     return manifest
 
@@ -199,6 +201,15 @@ def run_document(
                 state.doc_type = state.doc_type or "unknown"
                 return park_for_review(state)
             _audit(state, "classified", "sorter", {"doc_type": state.doc_type, "confidence": state.classification_confidence})
+            try:
+                copy_classified(
+                    state.file_path,
+                    doc_id=state.doc_id,
+                    doc_type=state.doc_type or "unknown",
+                    filename=state.original_filename,
+                )
+            except OSError:
+                pass
             _persist(state)
             _broadcast(state, node, actor)
             node = routing.after_classify(state, retry=node == "retry_classify")

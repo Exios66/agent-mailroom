@@ -25,6 +25,11 @@ def test_office_pages_send_csp_and_hardening_headers():
     assert "Content-Security-Policy" in html
     assert "/office/js/app.js" in html
     assert html.count("<script") == 1
+    assert 'data-tab="inbox"' in html
+    assert 'data-tab="archive"' in html
+    assert 'data-tab="matters"' in html
+    assert 'data-tab="failed"' in html
+    assert 'data-testid="lookup-q"' in html
     js = client.get("/office/js/app.js")
     assert js.status_code == 200
     assert "javascript" in js.headers.get("content-type", "")

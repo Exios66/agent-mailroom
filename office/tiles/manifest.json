@@ -68,6 +68,13 @@
     { "id": "report", "name": "REPORT", "x": 9, "y": 16, "w": 8, "h": 4 },
     { "id": "cafe", "name": "CAFE", "x": 24, "y": 12, "w": 8, "h": 8 }
   ],
+  "bins": {
+    "inbox": { "spawn": "bin-inbox", "label": "INBOX", "tab": "inbox", "color": "#7d97b5" },
+    "classified": { "spawn": "bin-classified", "label": "SORTED", "tab": "inbox", "color": "#f4d35e" },
+    "review": { "spawn": "bin-review", "label": "REVIEW", "tab": "review", "color": "#f4d35e" },
+    "archive": { "spawn": "bin-archive", "label": "ARCHIVE", "tab": "archive", "color": "#5ca97a" },
+    "failed": { "spawn": "bin-failed", "label": "RETURNS", "tab": "failed", "color": "#d96a62" }
+  },
   "wander": ["entrance", "cafe-seat-1", "cafe-seat-2", "cafe-stand-coffee", "cafe-stand-vending"],
   "monitor": {
     "offTopLeftGid": 365,

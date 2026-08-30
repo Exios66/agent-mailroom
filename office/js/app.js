@@ -1,6 +1,6 @@
-import { OfficeFloor } from "./floor.js?v=limezu3";
-import { CAST, ROSTER_CAST } from "./cast.js?v=limezu3";
-import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=limezu3";
+import { OfficeFloor } from "./floor.js?v=mailroom5";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom5";
+import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=mailroom5";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");
@@ -11,7 +11,8 @@ const counts = document.getElementById("counts");
 const providerEl = document.getElementById("provider");
 
 const floor = new OfficeFloor(document.getElementById("floor"), (item) => {
-  switchTab("floor");
+  if (item?.tray && item.tab) switchTab(item.tab);
+  else switchTab("floor");
   showInspect(item);
 });
 const logLines = [];
@@ -21,26 +22,69 @@ function showInspect(item) {
     inspect.innerHTML = `<p class="muted">Nothing selected.</p>`;
     return;
   }
-  const title = item.filename || item.agent || "Selection";
+  renderInspectCard(item);
+  if (item.doc_id) {
+    getJSON(`/v1/inspect/${item.doc_id}`).then((payload) => {
+      renderInspectCard({ ...item, ...payload.document, _audit: payload.audit, _source: payload.source, _conflict: payload.conflict });
+    }).catch(() => {});
+  }
+}
+
+function renderInspectCard(item) {
+  const title = item.filename || item.original_filename || item.agent || "Selection";
+  const pile = (item.documents || []).map((row) =>
+    `<p><button class="linkish" data-doc="${escapeHtml(row.doc_id)}">${escapeHtml(row.filename || row.original_filename || row.doc_id)}</button> <span class="chip">${escapeHtml(row.stage || row.bin || "")}</span></p>`
+  ).join("");
   const chips = [
+    item.tray && `<span class="chip">${item.tray} tray</span>`,
     item.stage && `<span class="chip">${item.stage}</span>`,
+    item.bin && `<span class="chip">${item.bin}</span>`,
     item.doc_type && `<span class="chip">${item.doc_type}</span>`,
+    item.doc_subclass && `<span class="chip">${item.doc_subclass}</span>`,
+    item.needs_reconsideration && `<span class="chip review">RECONSIDER</span>`,
+    item.conflict_detected && `<span class="chip fail">conflict</span>`,
     item.needs_human && `<span class="chip review">needs human</span>`,
     item.agent && `<span class="chip">${item.agent}</span>`,
   ].filter(Boolean).join("");
+  const causes = (item.review_causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("");
+  const path = (item.routing_path || []).join(" → ");
   const fields = item.extracted_data
     ? `<pre>${escapeHtml(JSON.stringify(item.extracted_data, null, 2))}</pre>`
+    : "";
+  const audit = item._audit
+    ? `<p class="muted">Audit ${item._audit.chain_valid ? "valid" : "BROKEN"} · ${item._audit.chain_length} links</p>
+       <ol class="audit">${(item._audit.entries || []).slice(-8).map((e) =>
+         `<li><b>${escapeHtml(e.event)}</b> ${escapeHtml(e.actor)} <span class="muted">${escapeHtml(e.timestamp || "")}</span></li>`
+       ).join("")}</ol>`
+    : "";
+  const source = item._source
+    ? `<details class="card" open><summary>Source · ${escapeHtml(item._source.bin || "")}</summary><pre>${escapeHtml(item._source.text || "")}</pre></details>`
+    : "";
+  const conflict = item._conflict
+    ? `<p class="fail-text">${escapeHtml(item._conflict.reason || "matter conflict")}</p>`
     : "";
   inspect.innerHTML = `
     <div class="card">
       <h3>${escapeHtml(title)}</h3>
-      <div>${chips}</div>
-      <p class="muted">${escapeHtml(item.doc_id || item.desk || "")}</p>
+      <div>${chips}${causes}</div>
+      <p class="muted">${escapeHtml(item.doc_id || item.desk || "")} · ${escapeHtml(item.matter_id || "")}</p>
+      ${item.classification_confidence != null ? `<p class="muted">classify ${(item.classification_confidence * 100).toFixed(0)}% · extract ${item.extraction_confidence != null ? (item.extraction_confidence * 100).toFixed(0) + "%" : "—"}</p>` : ""}
+      ${path ? `<p class="muted">${escapeHtml(path)}</p>` : ""}
       ${item.thought ? `<p>${escapeHtml(item.thought)}</p>` : ""}
       ${item.escalation_reason ? `<p>${escapeHtml(item.escalation_reason)}</p>` : ""}
+      ${conflict}
       ${item.report ? `<p>${escapeHtml(item.report)}</p>` : ""}
       ${fields}
+      ${audit}
+      ${source}
+      ${pile ? `<div class="tray-pile">${pile}</div>` : ""}
     </div>`;
+  inspect.querySelectorAll("[data-doc]").forEach((link) => {
+    link.addEventListener("click", () => {
+      switchTab("floor");
+      showInspect({ doc_id: link.dataset.doc, filename: link.textContent });
+    });
+  });
 }
 
 function escapeHtml(value) {
@@ -59,9 +103,13 @@ function switchTab(name) {
   document.body.dataset.panel = name;
   document.getElementById("panel-title").textContent = {
     floor: "Command Center",
+    inbox: "Inbox Hopper",
+    review: "Review Siding",
+    archive: "Archive",
+    failed: "Returns",
+    matters: "Matters",
     datasets: "Hub Datasets",
     topics: "Live Topics",
-    review: "Review Siding",
     hive: "Hive Mailboxes",
     metrics: "Floor Metrics",
     console: "Live Console",
@@ -94,6 +142,22 @@ document.getElementById("dataset-form").addEventListener("submit", async (ev) =>
   refresh();
 });
 
+document.getElementById("lookup-form")?.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const q = document.getElementById("lookup-q").value.trim();
+  const hits = document.getElementById("lookup-hits");
+  if (q.length < 2) {
+    hits.innerHTML = `<p class="muted">Type at least two characters.</p>`;
+    return;
+  }
+  try {
+    const payload = await getJSON(`/v1/search?q=${encodeURIComponent(q)}`);
+    renderLookup(payload.documents || []);
+  } catch (err) {
+    hits.innerHTML = `<p class="muted">${escapeHtml(String(err))}</p>`;
+  }
+});
+
 document.getElementById("brief-btn").addEventListener("click", () => switchTab("topics"));
 
 document.getElementById("topic-form").addEventListener("submit", async (ev) => {
@@ -112,8 +176,17 @@ document.getElementById("topic-form").addEventListener("submit", async (ev) => {
 
 document.getElementById("upload").addEventListener("change", async (ev) => {
   const file = ev.target.files?.[0];
-  if (file) await uploadFile(file, "UPLOAD");
+  const matter = document.getElementById("inbox-matter")?.value || "UPLOAD";
+  if (file) await uploadFile(file, matter);
   ev.target.value = "";
+});
+
+document.getElementById("inbox-upload")?.addEventListener("change", async (ev) => {
+  const file = ev.target.files?.[0];
+  const matter = document.getElementById("inbox-matter")?.value || "UPLOAD";
+  if (file) await uploadFile(file, matter);
+  ev.target.value = "";
+  refresh();
 });
 
 function appendLog(event) {
@@ -121,6 +194,8 @@ function appendLog(event) {
   logLines.push(line);
   consoleLog.textContent = logLines.slice(-80).join("\n");
 }
+
+let DOC_CLASSES = ["contract", "merger_agreement", "corporate_record", "correspondence", "compliance_filing", "insurance_claim"];
 
 function renderReview(docs) {
   if (!docs.length) {
@@ -131,42 +206,228 @@ function renderReview(docs) {
     <div class="card" data-doc="${doc.doc_id}">
       <h3>${escapeHtml(doc.original_filename)}</h3>
       <span class="chip review">${escapeHtml(doc.doc_type || "unknown")}</span>
+      ${(doc.review_causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
       <p class="muted">${escapeHtml(doc.escalation_reason || "needs a human")}</p>
+      <p class="muted">${escapeHtml(doc.matter_id || "")} · bin ${escapeHtml(doc.bin || "review")}</p>
       <label>Doc type
         <select class="dtype">
-          ${["contract","merger_agreement","corporate_record","correspondence","compliance_filing","insurance_claim"].map((t) =>
-            `<option ${t === doc.doc_type ? "selected" : ""}>${t}</option>`).join("")}
+          ${DOC_CLASSES.map((t) => `<option ${t === doc.doc_type ? "selected" : ""}>${t}</option>`).join("")}
         </select>
       </label>
+      <label>Subclass <input class="subclass" value="${escapeHtml(doc.doc_subclass || "")}" placeholder="CUAD subtype, form, etc."></label>
       <label>Notes <input class="notes" placeholder="operator notes"></label>
+      <label>Extracted JSON <textarea class="extracted" rows="4">${escapeHtml(JSON.stringify(doc.extracted_data || {}, null, 2))}</textarea></label>
+      <details><summary>Read source</summary><pre class="source-pane" data-src="${doc.doc_id}">loading…</pre></details>
       <div class="row">
         <button data-act="approved" data-disp="resume">Approve</button>
-        <button data-act="rejected" data-disp="resume">Reject</button>
+        <button data-act="approved" data-disp="record">Record</button>
+        <button data-act="approved" data-disp="complete">Complete</button>
+        <button data-act="rejected" data-disp="complete">Reject</button>
         <button data-act="approved" data-disp="requeue">Requeue</button>
       </div>
     </div>`).join("");
+  reviewList.querySelectorAll("details").forEach((el) => {
+    el.addEventListener("toggle", async () => {
+      if (!el.open) return;
+      const pane = el.querySelector(".source-pane");
+      if (!pane || pane.dataset.ready) return;
+      try {
+        const src = await getJSON(`/v1/documents/${pane.dataset.src}/source`);
+        pane.textContent = src.text || "";
+        pane.dataset.ready = "1";
+      } catch (err) {
+        pane.textContent = String(err);
+      }
+    });
+  });
   reviewList.querySelectorAll("button").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const card = btn.closest(".card");
+      let extracted = null;
+      try { extracted = JSON.parse(card.querySelector(".extracted").value || "{}"); } catch { extracted = null; }
       await postJSON(`/v1/review/${card.dataset.doc}/resolve`, {
         decision: btn.dataset.act,
         disposition: btn.dataset.disp,
         doc_type: card.querySelector(".dtype").value,
+        doc_subclass: card.querySelector(".subclass").value,
         notes: card.querySelector(".notes").value,
+        extracted_data: extracted,
       });
       refresh();
     });
   });
 }
 
+function bindInspectCards(root) {
+  root.querySelectorAll("[data-doc]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const id = el.dataset.doc;
+      if (!id) return;
+      switchTab("floor");
+      showInspect({ doc_id: id, filename: el.querySelector("h3")?.textContent || el.textContent });
+    });
+  });
+}
+
+function renderLookup(docs) {
+  const hits = document.getElementById("lookup-hits");
+  if (!hits) return;
+  if (!docs.length) {
+    hits.innerHTML = `<p class="muted">No filings match.</p>`;
+    return;
+  }
+  hits.innerHTML = docs.map((doc) => `
+    <div class="card" data-doc="${doc.doc_id}">
+      <h3>${escapeHtml(doc.original_filename)}</h3>
+      <span class="chip">${escapeHtml(doc.stage)}</span>
+      <span class="chip">${escapeHtml(doc.doc_type || "unknown")}</span>
+      <p class="muted">${escapeHtml(doc.matter_id)} · ${escapeHtml(doc.doc_id)}</p>
+    </div>`).join("");
+  bindInspectCards(hits);
+}
+
+function renderInbox(queue, classified) {
+  const list = document.getElementById("inbox-list");
+  if (!list) return;
+  const hopper = queue.inbox || queue.queued || [];
+  const processing = queue.processing || [];
+  const snaps = classified || [];
+  if (!hopper.length && !processing.length && !snaps.length) {
+    list.innerHTML = `<p class="muted">Hopper is empty. Upload a filing or drop a pile.</p>`;
+    return;
+  }
+  list.innerHTML = [
+    ...hopper.map((row) => `
+      <div class="card" data-doc="${escapeHtml(row.doc_id || "")}">
+        <h3>${escapeHtml(row.filename)}</h3>
+        <span class="chip">inbox</span>
+        <p class="muted">${escapeHtml(row.matter_id || "")} · ${escapeHtml(row.source || "")}</p>
+      </div>`),
+    ...processing.map((row) => `
+      <div class="card" data-doc="${escapeHtml(row.doc_id || "")}">
+        <h3>${escapeHtml(row.original_filename || row.filename)}</h3>
+        <span class="chip">${escapeHtml(row.stage || "processing")}</span>
+        <p class="muted">${escapeHtml(row.matter_id || "")} · ${escapeHtml(row.bin || "")}</p>
+      </div>`),
+    ...snaps.slice(0, 8).map((row) => `
+      <div class="card" data-doc="${escapeHtml(row.doc_id || "")}">
+        <h3>${escapeHtml(row.original_filename || row.filename)}</h3>
+        <span class="chip">classified</span>
+        <p class="muted">${escapeHtml(row.doc_type || row.classified_type || "")} snapshot</p>
+      </div>`),
+  ].join("");
+  bindInspectCards(list);
+}
+
+function renderArchive(docs) {
+  const list = document.getElementById("archive-list");
+  if (!list) return;
+  if (!docs.length) {
+    list.innerHTML = `<p class="muted">Creed's shelves are empty.</p>`;
+    return;
+  }
+  list.innerHTML = docs.map((doc) => `
+    <div class="card" data-doc="${doc.doc_id}">
+      <h3>${escapeHtml(doc.original_filename)}</h3>
+      <span class="chip">${escapeHtml(doc.doc_type || "unknown")}</span>
+      ${doc.needs_reconsideration ? `<span class="chip review">RECONSIDER</span>` : `<span class="chip">chain ${doc.bin || "archive"}</span>`}
+      <p class="muted">${escapeHtml(doc.matter_id)} · ${escapeHtml(doc.doc_id)}</p>
+      <div class="row">
+        <button data-inspect="${doc.doc_id}">Inspect</button>
+        <button data-verify="${doc.doc_id}">Verify chain</button>
+      </div>
+      <pre class="verify-pane" hidden></pre>
+    </div>`).join("");
+  list.querySelectorAll("[data-inspect]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      switchTab("floor");
+      showInspect({ doc_id: btn.dataset.inspect, filename: "Archive" });
+    });
+  });
+  list.querySelectorAll("[data-verify]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest(".card");
+      const pane = card.querySelector(".verify-pane");
+      const result = await getJSON(`/v1/archive/${btn.dataset.verify}/verify`);
+      pane.hidden = false;
+      pane.textContent = result.chain_valid
+        ? `VALID · ${result.chain_length} links`
+        : `BROKEN · ${result.chain_length} links`;
+    });
+  });
+}
+
+function renderFailed(docs) {
+  const list = document.getElementById("failed-list");
+  if (!list) return;
+  if (!docs.length) {
+    list.innerHTML = `<p class="muted">No returns. Rejected filings land here.</p>`;
+    return;
+  }
+  list.innerHTML = docs.map((doc) => `
+    <div class="card" data-doc="${doc.doc_id}">
+      <h3>${escapeHtml(doc.original_filename)}</h3>
+      <span class="chip fail">failed</span>
+      ${(doc.review_causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
+      <p class="muted">${escapeHtml(doc.escalation_reason || "rejected")}</p>
+      <div class="row"><button data-inspect="${doc.doc_id}">Inspect</button></div>
+    </div>`).join("");
+  list.querySelectorAll("[data-inspect]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchTab("floor");
+      showInspect({ doc_id: btn.dataset.inspect, filename: "Returns" });
+    });
+  });
+}
+
+function renderMatters(data) {
+  const list = document.getElementById("matter-list");
+  if (!list) return;
+  const rows = data.matters || [];
+  if (!rows.length) {
+    list.innerHTML = `<p class="muted">No matters yet. Upload or pull a corpus.</p>`;
+    return;
+  }
+  list.innerHTML = rows.map((row) => `
+    <div class="card" data-matter="${escapeHtml(row.matter_id)}">
+      <h3>${escapeHtml(row.matter_id)}</h3>
+      <span class="chip">${row.document_count} docs</span>
+      <span class="chip review">${row.review_count || 0} review</span>
+      <span class="chip">${row.archived_count || 0} archived</span>
+      <div class="row"><button data-open="${escapeHtml(row.matter_id)}">Open matter</button></div>
+      <div class="matter-docs" hidden></div>
+    </div>`).join("");
+  list.querySelectorAll("[data-open]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const card = btn.closest(".card");
+      const pane = card.querySelector(".matter-docs");
+      const payload = await getJSON(`/v1/matters/${encodeURIComponent(btn.dataset.open)}`);
+      pane.hidden = false;
+      pane.innerHTML = (payload.documents || []).map((doc) =>
+        `<p><button class="linkish" data-doc="${doc.doc_id}">${escapeHtml(doc.original_filename)}</button> <span class="chip">${escapeHtml(doc.stage)}</span></p>`
+      ).join("");
+      pane.querySelectorAll("[data-doc]").forEach((link) => {
+        link.addEventListener("click", () => {
+          switchTab("floor");
+          showInspect({ doc_id: link.dataset.doc, filename: link.textContent });
+        });
+      });
+    });
+  });
+}
+
 function renderHive(data) {
+  const acts = floor.hiveActs || {};
   const cards = Object.entries(data.registry || {}).map(([name, meta]) => {
     const character = ROSTER_CAST[name];
     const mail = (data.inboxes?.[name] || []).slice(0, 3);
     return `<div class="card">
       <h3>${escapeHtml(CAST[character]?.name || name)} · ${escapeHtml(meta.role)}</h3>
       <p class="muted">${escapeHtml(name)} · inbox ${meta.inbox_count || 0}</p>
-      ${mail.map((m) => `<div class="chip">${escapeHtml(m.act)} ${escapeHtml(m.subject)}</div>`).join("")}
+      ${mail.map((m) => {
+        const color = acts[m.act] || "#fff8e7";
+        return `<div class="chip" style="background:${color}">${escapeHtml(m.act)} ${escapeHtml(m.subject)}</div>`;
+      }).join("")}
     </div>`;
   });
   hiveList.innerHTML = cards.join("");
@@ -241,18 +502,46 @@ function renderMetrics(runs, health, ops) {
   const pending = health?.checks?.inbox_pending ?? ops?.inbox_pending ?? 0;
   document.getElementById("lamp").textContent =
     lamp === "ok" ? "SOURCE: LIVE PIPELINE" : `SOURCE: WATCHER ${String(lamp).toUpperCase()}`;
+  const stuck = ops?.stuck_documents ?? 0;
+  const reconsider = ops?.reconsider ?? 0;
   metricsEl.innerHTML = `
     <div class="card"><h3>On the floor</h3><p>${runs.length} documents</p></div>
     <div class="card"><h3>Watcher</h3><p>${escapeHtml(lamp)} · inbox ${pending}</p></div>
     <div class="card"><h3>Harness</h3><p>${escapeHtml(requested)} active ${escapeHtml(active)} · ${escapeHtml(llm.model || "")}</p></div>
     <div class="card"><h3>Review siding</h3><p>${ops?.review_queue ?? 0}</p></div>
+    <div class="card"><h3>Inbox tray</h3><p>${ops?.bins?.inbox ?? 0}</p></div>
+    <div class="card"><h3>Classified</h3><p>${ops?.bins?.classified ?? 0}</p></div>
+    <div class="card"><h3>Returns</h3><p>${ops?.bins?.failed ?? 0}</p></div>
+    <div class="card"><h3>Stuck</h3><p>${stuck}</p></div>
+    <div class="card"><h3>Reconsider</h3><p>${reconsider}</p></div>
+    ${Object.entries(ops?.classes || {}).map(([k, v]) => `<div class="card"><h3>${escapeHtml(k)}</h3><p>${v}</p></div>`).join("")}
     ${Object.entries(stages).map(([k, v]) => `<div class="card"><h3>${escapeHtml(k)}</h3><p>${v}</p></div>`).join("")}
+    <div class="row">
+      <button id="sweep-btn" class="action">Boss sweep</button>
+      <button id="recover-btn" class="action">Recover stuck</button>
+    </div>
   `;
+  document.getElementById("sweep-btn")?.addEventListener("click", async () => {
+    await postJSON("/v1/ops/sweep", {});
+    refresh();
+  });
+  document.getElementById("recover-btn")?.addEventListener("click", async () => {
+    await postJSON("/v1/ops/recover", {});
+    refresh();
+  });
+}
+
+function setBadge(name, count) {
+  const el = document.querySelector(`[data-badge="${name}"]`);
+  if (!el) return;
+  const n = Number(count) || 0;
+  el.textContent = String(n);
+  el.hidden = n <= 0;
 }
 
 async function refresh() {
   try {
-    const [floorData, review, hive, health, topics, ops, datasets] = await Promise.all([
+    const [floorData, review, hive, health, topics, ops, datasets, queue, archive, failed, classified, matters, meta, consoleHist] = await Promise.all([
       getJSON("/v1/floor"),
       getJSON("/v1/review/queue"),
       getJSON("/v1/hive"),
@@ -260,16 +549,37 @@ async function refresh() {
       getJSON("/v1/topics"),
       getJSON("/v1/ops/status"),
       getJSON("/v1/datasets"),
+      getJSON("/v1/queue"),
+      getJSON("/v1/archive"),
+      getJSON("/v1/failed"),
+      getJSON("/v1/classified"),
+      getJSON("/v1/matters"),
+      getJSON("/v1/meta"),
+      getJSON("/v1/console"),
     ]);
-    floor.applySnapshot(floorData.runs || []);
+    if (Array.isArray(meta.doc_classes) && meta.doc_classes.length) DOC_CLASSES = meta.doc_classes;
+    if (meta.hive_acts) floor.setHiveActs(meta.hive_acts);
+    floor.applySnapshot(floorData.runs || [], floorData.bins);
     renderReview(review.documents || []);
+    renderInbox(queue, classified.documents || []);
+    renderArchive(archive.documents || []);
+    renderFailed(failed.documents || []);
+    renderMatters(matters);
     renderHive(hive);
     renderTopics(topics.topics || []);
     renderDatasets(datasets);
     renderMetrics(floorData.runs || [], health, ops);
+    setBadge("inbox", queue.counts?.inbox ?? floorData.inbox_pending ?? 0);
+    setBadge("review", review.review_queue ?? floorData.review_queue ?? 0);
+    setBadge("archive", archive.count ?? floorData.archived ?? 0);
+    setBadge("failed", failed.count ?? floorData.failed ?? 0);
+    if (!logLines.length) {
+      for (const event of (consoleHist.events || []).slice(-40)) appendLog(event);
+    }
+    const hopper = queue.counts?.inbox ?? floorData.inbox_pending ?? 0;
     const queued = topics.queued || 0;
     const live = topics.live || 0;
-    counts.textContent = `${floorData.runs?.length || 0} docs · ${live} live topics · ${queued} queued`;
+    counts.textContent = `${floorData.runs?.length || 0} docs · inbox ${hopper} · review ${floorData.review_queue || 0} · ${live} live topics · ${queued} queued`;
   } catch (err) {
     appendLog({ type: "error", subject: String(err) });
   }

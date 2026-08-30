@@ -16,7 +16,9 @@ Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom). 
 - **Hub datasets** — pull [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) rows (`docclass-pilot`, `docclass-merged`, Enron, CMS claims, CUAD) onto the same inbox
 - **OpenRouter-first harness** — primary provider is OpenRouter; add OpenAI, Ollama, vLLM, or a generic OpenAI-compatible endpoint. Missing keys fall back to `mock`.
 - **Hive mailboxes** — one JSON file per message, single-writer desks, speech acts (`request`, `inform`, `query`, …)
-- **Office floor** — LimeZu Modern Interiors rooms (procedural fallback), walking avatars, thought clouds, flying envelopes, review siding, datasets + metrics + console
+- **Office floor** — LimeZu rooms, walking avatars, thought clouds, flying envelopes
+- **Mailroom desks** — inbox hopper, full review siding (record/complete/source), archive + audit verify, returns, matters, inspect (hash chain + source), lookup, ops recover/sweep
+- **Floor trays** — clickable inbox / sorted / review / archive / returns crates on the walking floor, with stamp-colored piles
 - **Desktop shell** — optional hardened Electron window around the same `/office/` UI the browser uses
 - **SQLite-first** — `data/mailroom.db` + filesystem bins. Local venv or Docker.
 - **Docker** — `Dockerfile` + Compose for the same `/office/` UI and `/v1` API
@@ -115,6 +117,16 @@ Same producer shape as llm-mailroom. Prefer `/v1`.
 | `GET` | `/v1/review/queue` | Human siding |
 | `POST` | `/v1/review/{doc_id}/resolve` | `resume` / `record` / `requeue` / `complete` |
 | `GET` | `/v1/ops/status` | Watcher, inbox pending, stage counts, review queue |
+| `GET` | `/v1/queue` | Inbox hopper + in-flight |
+| `GET` | `/v1/inspect/{id}` | Catalog + audit + source + conflict |
+| `GET` | `/v1/archive` | Filed documents |
+| `GET` | `/v1/archive/{id}/verify` | Hash-chain validity |
+| `GET` | `/v1/matters` | Matter index |
+| `GET` | `/v1/failed` | Rejected / failed returns |
+| `GET` | `/v1/classified` | Post-sort snapshots |
+| `GET` | `/v1/search` | Lookup by id, matter, filename, class |
+| `POST` | `/v1/ops/recover` | Park stuck processing |
+| `POST` | `/v1/ops/sweep` | Boss tray walk |
 | `GET` | `/v1/floor` | Office snapshot |
 | `GET` | `/v1/hive` | Roster + inboxes |
 | `WS` | `/ws` | Live pipeline + hive events |
@@ -131,7 +143,7 @@ Tests never call a hosted LLM. The mock sorter/specialists are deterministic ove
 
 ```
 src/agent_mailroom/   pipeline, agents, hive, storage, API, LLM harnesses
-office/               pixel floor (vanilla JS, no build step)
+office/               pixel floor + mailroom desks (vanilla JS, no build step)
 office/tiles/         LimeZu atlases, Tiled map, licence + attribution
 electron/             hardened desktop shell (optional)
 fixtures/samples/     HarborPoint demo pile

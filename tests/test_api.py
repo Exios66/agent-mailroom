@@ -46,5 +46,8 @@ def test_upload_and_status(samples):
     assert status.status_code == 200
     row = status.json()
     assert row.get("stage") == "archived"
+    assert row.get("bin") == "archive"
     floor = client.get("/v1/floor").json()
     assert floor["count"] >= 1
+    assert any(run["doc_id"] == doc_id for run in floor["runs"])
+    assert floor["bins"]["archive"]["count"] >= 1

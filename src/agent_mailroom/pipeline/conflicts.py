@@ -58,3 +58,16 @@ def detect_conflict(state: RunState) -> tuple[bool, str | None]:
             right = sorted(other)[0]
             return True, f"matter conflict: {left} vs {right}"
     return False, None
+
+
+def conflict_detail(row: dict) -> dict | None:
+    reason = row.get("escalation_reason") or ""
+    if "conflict" not in reason.lower() and not row.get("conflict_detected"):
+        return None
+    data = row.get("extracted_data") if isinstance(row.get("extracted_data"), dict) else {}
+    return {
+        "reason": reason,
+        "this_document": sorted(_entities(data)),
+        "matter_id": row.get("matter_id"),
+        "doc_type": row.get("doc_type"),
+    }

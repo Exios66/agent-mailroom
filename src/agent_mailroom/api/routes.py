@@ -10,13 +10,23 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, stamp_color
+from agent_mailroom.api.present import document_view, floor_bins, floor_run, read_source_text
+from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, taxonomy
 from agent_mailroom.llm.providers import provider_status
 from agent_mailroom.office_theme import tileset_status
 from agent_mailroom.hive.mailbox import list_inbox, roster_status
-from agent_mailroom.pipeline.bins import enqueue_inbox, inbox_pending, review_dir
+from agent_mailroom.pipeline.bins import (
+    enqueue_inbox,
+    inbox_pending,
+    list_classified_snapshots,
+    locate_document,
+    read_inbox_meta,
+    review_dir,
+)
 from agent_mailroom.pipeline.events import recent
+from agent_mailroom.pipeline.reconsider import enrich_row
 from agent_mailroom.pipeline.runner import fail_document, resume_from_review
+from agent_mailroom.pipeline.routing import judge_enabled
 from agent_mailroom.pipeline.watcher import scan_inbox, status as watcher_status, watcher_lamp
 from agent_mailroom.pipeline.topics import (
     complete_topic,
@@ -27,7 +37,15 @@ from agent_mailroom.pipeline.topics import (
 )
 from agent_mailroom.pipeline.state import RunState
 from agent_mailroom.storage.audit import verify_chain
-from agent_mailroom.storage.catalog import get_document, list_documents, list_matters, list_review_queue
+from agent_mailroom.storage.catalog import (
+    get_document,
+    list_documents,
+    list_documents_by_stage,
+    list_matters,
+    list_matters_index,
+    list_review_queue,
+    search_documents,
+)
 
 router = APIRouter()
 
@@ -86,6 +104,8 @@ def health() -> dict[str, Any]:
             "watcher_heartbeat_seconds_ago": watch["heartbeat_age"],
             "tilesets": tileset_status(),
             "desktop": os.environ.get("MAILROOM_DESKTOP") == "1",
+            "judge_verify": judge_enabled(),
+            "auth_required": bool(os.environ.get("MAILROOM_API_TOKEN", "").strip()),
         },
     }
 
@@ -112,11 +132,12 @@ def ops_status(authorization: str | None = Header(default=None)) -> dict[str, An
             stuck = conn.execute(
                 """
                 SELECT COUNT(*) AS n FROM documents
-                WHERE stage IN ('processing', 'classified')
+                WHERE stage IN ('processing', 'classified', 'inbox')
                   AND updated_at < datetime('now', '-15 minutes')
                 """
             ).fetchone()["n"]
     review = list_review_queue()
+    reconsider = sum(1 for row in list_documents_by_stage("archived") if enrich_row(row)["needs_reconsideration"])
     return {
         "watcher": watcher_status(),
         "inbox_pending": len(inbox_pending()),
@@ -124,9 +145,18 @@ def ops_status(authorization: str | None = Header(default=None)) -> dict[str, An
         "classes": by_class,
         "review_queue": len(review),
         "stuck_documents": stuck,
+        "reconsider": reconsider,
+        "bins": {
+            "inbox": len(inbox_pending()),
+            "classified": len(list_classified_snapshots()),
+            "review": len(review),
+            "archived": by_stage.get("archived", 0),
+            "failed": by_stage.get("failed", 0),
+        },
         "hive": _hive_stats(),
         "llm_provider": provider_status()["active"],
         "llm": provider_status(),
+        "judge_verify": judge_enabled(),
         "sync": os.environ.get("MAILROOM_SYNC") == "1",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -166,7 +196,7 @@ def status(doc_id: str, authorization: str | None = Header(default=None)) -> dic
     row = get_document(doc_id)
     if not row:
         raise HTTPException(status_code=404, detail="unknown document")
-    return row
+    return document_view(row)
 
 
 @router.get("/audit/{doc_id}")
@@ -179,7 +209,7 @@ def audit(doc_id: str, authorization: str | None = Header(default=None)) -> dict
 @router.get("/review/queue")
 def review_queue(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
-    docs = list_review_queue()
+    docs = [document_view(row) for row in list_review_queue()]
     return {
         "review_queue": len(docs),
         "documents": docs,
@@ -213,8 +243,34 @@ def resolve(
 
     if disposition == "record":
         from agent_mailroom.storage.audit import write_audit
+        from agent_mailroom.storage.catalog import upsert_document
+        from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 
-        write_audit(doc_id=doc_id, matter_id=row["matter_id"], event="review_recorded", actor="human", detail={"notes": body.notes})
+        upsert_document(
+            DocumentManifest(
+                doc_id=doc_id,
+                matter_id=row["matter_id"],
+                original_filename=row["original_filename"],
+                stage=PipelineStage.REVIEW,
+                graph_node="human_review",
+                doc_type=override or row.get("doc_type"),
+                doc_subclass=body.doc_subclass or row.get("doc_subclass"),
+                classification_confidence=row.get("classification_confidence"),
+                extraction_confidence=row.get("extraction_confidence"),
+                extracted_data=body.extracted_data or row.get("extracted_data"),
+                report=row.get("report"),
+                escalation_reason=row.get("escalation_reason"),
+                routing_path=list(row.get("routing_path") or []),
+                review_decision="recorded",
+            )
+        )
+        write_audit(
+            doc_id=doc_id,
+            matter_id=row["matter_id"],
+            event="review_recorded",
+            actor="human",
+            detail={"notes": body.notes, "doc_type": override, "doc_subclass": body.doc_subclass},
+        )
         return {"status": "recorded", "doc_id": doc_id}
 
     if disposition == "requeue":
@@ -254,6 +310,7 @@ def resolve(
             original_filename=row["original_filename"],
             file_path=parked,
             doc_type=override or row.get("doc_type"),
+            doc_subclass=body.doc_subclass or row.get("doc_subclass"),
             extracted_data=body.extracted_data or row.get("extracted_data"),
             routing_path=list(row.get("routing_path") or []),
             report=row.get("report") or "Completed at review desk.",
@@ -271,11 +328,31 @@ def resolve(
 @router.get("/queue")
 def queue(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
+    hopper = []
+    for path in inbox_pending():
+        meta = read_inbox_meta(path)
+        hopper.append(
+            {
+                "doc_id": meta.get("doc_id"),
+                "filename": meta.get("filename") or path.name,
+                "matter_id": meta.get("matter_id") or "DEFAULT",
+                "source": meta.get("source") or "drop",
+                "bin": "inbox",
+                "path": str(path),
+            }
+        )
     docs = list_documents(200)
     return {
-        "queued": [d for d in docs if d["stage"] == "inbox"],
-        "processing": [d for d in docs if d["stage"] in {"processing", "classified"}],
-        "recent": docs[:20],
+        "inbox": hopper,
+        "queued": hopper,
+        "processing": [document_view(d) for d in docs if d["stage"] in {"processing", "classified"}],
+        "review": [document_view(d) for d in docs if d["stage"] == "review"],
+        "recent": [document_view(d) for d in docs[:20]],
+        "counts": {
+            "inbox": len(hopper),
+            "processing": sum(1 for d in docs if d["stage"] in {"processing", "classified"}),
+            "review": sum(1 for d in docs if d["stage"] == "review"),
+        },
     }
 
 
@@ -287,61 +364,88 @@ def lookup(doc_id: str | None = None, authorization: str | None = Header(default
     row = get_document(doc_id)
     if not row:
         raise HTTPException(status_code=404, detail="unknown document")
-    return {"document": row}
+    return {"document": document_view(row)}
+
+
+@router.get("/search")
+def search(q: str = "", authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    needle = (q or "").strip()
+    if len(needle) < 2:
+        return {"query": needle, "count": 0, "documents": []}
+    docs = [document_view(row) for row in search_documents(needle)]
+    return {"query": needle, "count": len(docs), "documents": docs}
 
 
 @router.get("/documents/{doc_id}/source")
 def source(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
-    parked = next(review_dir().glob(f"{doc_id}--*"), None)
-    if parked is None:
-        raise HTTPException(status_code=404, detail="source not parked")
-    return {"doc_id": doc_id, "filename": parked.name, "text": parked.read_text(encoding="utf-8", errors="replace")}
+    loc = locate_document(doc_id)
+    path = loc.get("path")
+    if path is None:
+        raise HTTPException(status_code=404, detail="source not on disk")
+    return {
+        "doc_id": doc_id,
+        "filename": path.name,
+        "bin": loc.get("bin"),
+        "text": read_source_text(path),
+    }
+
+
+@router.get("/inspect/{doc_id}")
+def inspect_document(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    row = get_document(doc_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="unknown document")
+    view = document_view(row)
+    valid, entries = verify_chain(doc_id)
+    loc = locate_document(doc_id)
+    source_payload = None
+    if loc.get("path"):
+        source_payload = {
+            "filename": loc["path"].name,
+            "bin": loc.get("bin"),
+            "text": read_source_text(loc["path"]),
+        }
+    return {
+        "document": view,
+        "audit": {"chain_valid": valid, "chain_length": len(entries), "entries": entries},
+        "source": source_payload,
+        "conflict": view.get("conflict_detail"),
+    }
+
+
+@router.get("/matters")
+def matters(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    rows = list_matters_index()
+    return {"count": len(rows), "matters": rows}
 
 
 @router.get("/matters/{matter_id}")
 def matter(matter_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
-    docs = list_matters(matter_id)
+    docs = [document_view(row) for row in list_matters(matter_id)]
     return {"matter_id": matter_id, "document_count": len(docs), "documents": docs}
 
 
 @router.get("/floor")
 def floor() -> dict[str, Any]:
     docs = list_documents(80)
-    runs = []
-    for row in docs:
-        stage = row.get("graph_node") or row["stage"]
-        display = {
-            "human_review": "review",
-            "compile_report": "report",
-            "catalog_write": "catalog",
-            "boss_escalation": "boss",
-            "archived": "archived",
-            "failed": "failed",
-            "review": "review",
-        }.get(stage, stage)
-        runs.append(
-            {
-                "trace_id": row["doc_id"],
-                "doc_id": row["doc_id"],
-                "filename": row["original_filename"],
-                "matter_id": row["matter_id"],
-                "stage": display if row["stage"] not in {"archived", "failed", "review"} else row["stage"],
-                "doc_type": row.get("doc_type"),
-                "stamp": stamp_color(row.get("doc_type")),
-                "classification_confidence": row.get("classification_confidence"),
-                "extraction_confidence": row.get("extraction_confidence"),
-                "escalation_reason": row.get("escalation_reason"),
-                "needs_human": row["stage"] == "review",
-                "routing_path": row.get("routing_path") or [],
-                "extracted_data": row.get("extracted_data"),
-                "report": row.get("report"),
-                "updated_at": row.get("updated_at"),
-                "conflict_detected": "conflict" in (row.get("escalation_reason") or "").lower(),
-            }
-        )
-    return {"count": len(runs), "runs": runs, "roster": agent_roster()}
+    runs = [floor_run(row) for row in docs]
+    trays = floor_bins(runs)
+    return {
+        "count": len(runs),
+        "runs": runs,
+        "roster": agent_roster(),
+        "bins": trays,
+        "inbox_pending": len(inbox_pending()),
+        "review_queue": trays["review"]["count"],
+        "reconsider": sum(1 for run in runs if run.get("needs_reconsideration")),
+        "failed": trays["failed"]["count"],
+        "archived": trays["archive"]["count"],
+    }
 
 
 @router.get("/hive")
@@ -358,11 +462,17 @@ def console() -> dict[str, Any]:
 
 @router.get("/meta")
 def meta() -> dict[str, Any]:
+    tax = taxonomy()
     return {
         "service": "agent-mailroom",
         "doc_classes": live_doc_types(),
+        "stamps": {row["key"]: row.get("stamp") for row in tax.get("doc_classes", [])},
+        "hive_acts": tax.get("hive_acts") or {},
+        "trays": ["inbox", "classified", "review", "archive", "failed"],
         "agents": agent_roster(),
         "dispositions": ["resume", "record", "requeue", "complete"],
+        "auth_required": bool(os.environ.get("MAILROOM_API_TOKEN", "").strip()),
+        "judge_verify": judge_enabled(),
     }
 
 
@@ -500,6 +610,79 @@ def datasets_pull(body: HubPullBody | None = None, authorization: str | None = H
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"hub pull failed: {exc}") from exc
+
+
+@router.get("/failed")
+def failed_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    docs = [document_view(row) for row in list_documents_by_stage("failed")]
+    return {"count": len(docs), "documents": docs}
+
+
+@router.get("/classified")
+def classified_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    snaps = list_classified_snapshots()
+    documents = []
+    for snap in snaps:
+        row = get_document(snap["doc_id"])
+        if row:
+            view = document_view(row)
+            view["classified_path"] = snap["path"]
+            view["classified_type"] = snap["doc_type"]
+            documents.append(view)
+        else:
+            documents.append(snap)
+    return {"count": len(documents), "documents": documents}
+
+
+@router.get("/archive")
+def archive_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    docs = [document_view(row) for row in list_documents_by_stage("archived")]
+    return {"count": len(docs), "documents": docs}
+
+
+@router.get("/archive/{doc_id}")
+def archive_one(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    row = get_document(doc_id)
+    if not row or row.get("stage") != "archived":
+        raise HTTPException(status_code=404, detail="not in archive")
+    valid, entries = verify_chain(doc_id)
+    view = document_view(row)
+    loc = locate_document(doc_id)
+    return {
+        "document": view,
+        "chain_valid": valid,
+        "chain_length": len(entries),
+        "bin": loc.get("bin"),
+        "path": str(loc["path"]) if loc.get("path") else None,
+    }
+
+
+@router.get("/archive/{doc_id}/verify")
+def archive_verify(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    valid, entries = verify_chain(doc_id)
+    return {"doc_id": doc_id, "chain_valid": valid, "chain_length": len(entries), "entries": entries}
+
+
+@router.post("/ops/recover")
+def ops_recover(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    from agent_mailroom.pipeline.ops import recover_stuck
+
+    recovered = recover_stuck()
+    return {"recovered": recovered, "count": len(recovered)}
+
+
+@router.post("/ops/sweep")
+def ops_sweep(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    from agent_mailroom.pipeline.ops import boss_sweep
+
+    return boss_sweep()
 
 
 @router.post("/demo")

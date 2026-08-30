@@ -7,8 +7,8 @@
   <title>The Mailroom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/office/css/tokens.css?v=limezu3">
-  <link rel="stylesheet" href="/office/css/office.css?v=limezu3">
+  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom5">
+  <link rel="stylesheet" href="/office/css/office.css?v=mailroom5">
   <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
 </head>
 <body>
@@ -16,9 +16,13 @@
     <div class="brand">THE MAILROOM<small>classify · extract · judge · archive</small></div>
     <nav class="tabs" id="tabs" data-testid="office-tabs">
       <button data-tab="floor" data-testid="tab-floor" class="active">Floor</button>
+      <button data-tab="inbox" data-testid="tab-inbox">Inbox <span class="badge" data-badge="inbox" hidden>0</span></button>
+      <button data-tab="review" data-testid="tab-review">Review <span class="badge" data-badge="review" hidden>0</span></button>
+      <button data-tab="archive" data-testid="tab-archive">Archive <span class="badge" data-badge="archive" hidden>0</span></button>
+      <button data-tab="failed" data-testid="tab-failed">Returns <span class="badge" data-badge="failed" hidden>0</span></button>
+      <button data-tab="matters" data-testid="tab-matters">Matters</button>
       <button data-tab="datasets" data-testid="tab-datasets">Datasets</button>
       <button data-tab="topics" data-testid="tab-topics">Topics</button>
-      <button data-tab="review" data-testid="tab-review">Review</button>
       <button data-tab="hive" data-testid="tab-hive">Hive</button>
       <button data-tab="metrics" data-testid="tab-metrics">Metrics</button>
       <button data-tab="console" data-testid="tab-console">Console</button>
@@ -34,14 +38,32 @@
   <main class="shell">
     <section class="floor-wrap">
       <canvas id="floor" width="1280" height="768" aria-label="Mailroom floor" data-testid="floor-canvas"></canvas>
-      <div class="legend" data-testid="floor-legend">Click an avatar, envelope, or desk · gold thought = live work · maroon office = the boss</div>
+      <div class="legend" data-testid="floor-legend">Click a tray, avatar, envelope, or desk · gold thought = live work · maroon office = the boss</div>
     </section>
     <aside class="desk">
       <h2 id="panel-title">Command Center</h2>
       <div class="body">
         <section class="view active" id="view-floor">
-          <p class="muted">The floor is the llm-mailroom pipeline. Avatars walk the hall, sit when a filing lands, and mutter thought clouds. Envelopes fly desk to desk.</p>
+          <p class="muted">The floor is the mailroom. Trays hold parked filings. Click a crate, desk, or envelope for the inspector — audit chain, source, bin, and conflicts.</p>
+          <form id="lookup-form" class="card">
+            <h3>Lookup</h3>
+            <label>Find a filing <input id="lookup-q" data-testid="lookup-q" placeholder="doc id, matter, filename, class" autocomplete="off"></label>
+            <div class="row"><button type="submit" class="action" data-testid="lookup-btn">Search</button></div>
+          </form>
+          <div id="lookup-hits" data-testid="lookup-hits"></div>
           <div id="inspect" data-testid="inspect"></div>
+        </section>
+        <section class="view" id="view-inbox">
+          <form id="inbox-form" class="card">
+            <h3>Hopper</h3>
+            <p class="muted">Uploads land in the inbox. The watcher claims each file once.</p>
+            <label>Matter <input id="inbox-matter" value="UPLOAD"></label>
+            <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;width:fit-content;">
+              Drop a filing
+              <input id="inbox-upload" type="file" hidden accept=".txt,.md,.pdf,.docx">
+            </label>
+          </form>
+          <div id="inbox-list" data-testid="inbox-list"></div>
         </section>
         <section class="view" id="view-datasets">
           <form id="dataset-form" class="card">
@@ -68,11 +90,15 @@
               <select id="topic-route" name="route_to">
                 <option value="boss">Boss</option>
                 <option value="sorter">Sorter</option>
+                <option value="sorter_reviewer">Reviewer</option>
                 <option value="contracts_specialist">Contracts</option>
                 <option value="judge">Judge</option>
+                <option value="archivist">Archivist</option>
+                <option value="reporter">Reporter</option>
               </select>
             </label>
             <label>Brief <textarea id="topic-body" name="body" rows="6" placeholder="What should the office address?"></textarea></label>
+            <label class="check"><input type="checkbox" id="topic-ingest" data-testid="topic-ingest"> File this brief onto the inbox (skip the “looks like a filing” guess)</label>
             <div class="row">
               <button type="submit" data-action="queue">Queue</button>
               <button type="submit" class="action primary" data-action="launch">Launch now</button>
@@ -81,7 +107,16 @@
           <div id="topic-list"></div>
         </section>
         <section class="view" id="view-review">
-          <div id="review-list"></div>
+          <div id="review-list" data-testid="review-list"></div>
+        </section>
+        <section class="view" id="view-archive">
+          <div id="archive-list" data-testid="archive-list"></div>
+        </section>
+        <section class="view" id="view-failed">
+          <div id="failed-list" data-testid="failed-list"></div>
+        </section>
+        <section class="view" id="view-matters">
+          <div id="matter-list" data-testid="matter-list"></div>
         </section>
         <section class="view" id="view-hive">
           <div id="hive-list"></div>
@@ -104,6 +139,6 @@
     <a id="limezu-credit" data-testid="limezu-credit" hidden href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">Tiles: LimeZu</a>
   </footer>
 
-  <script type="module" src="/office/js/app.js?v=limezu3"></script>
+  <script type="module" src="/office/js/app.js?v=mailroom5"></script>
 </body>
 </html>
