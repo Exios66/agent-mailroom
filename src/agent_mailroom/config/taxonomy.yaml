@@ -143,3 +143,17 @@ hive_acts:
   agree: "#5CA97A"
   done: "#5CA97A"
   refuse: "#D96A62"
+
+vision:
+  enabled: true
+  max_pages: 10
+  dpi: 150
+  models:
+    - qwen
+    - gpt-4o
+    - gemini
+    - claude-3
+
+field_scoring:
+  ambiguous_band: [0.55, 0.85]
+  embedding_enabled: false

@@ -1,17 +1,29 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=limezu2";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom6";
 import {
   TILE,
   SCALE,
   layout,
   applyTiledLayout,
   deskForRun,
+  binForRun,
   isWalkable,
   tileToPx,
   getDesks,
-} from "./layout.js?v=limezu2";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=limezu2";
+  getBins,
+} from "./layout.js?v=mailroom6";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom6";
 
-export { TILE, SCALE, deskForRun, tileToPx, getDesks };
+export { TILE, SCALE, deskForRun, binForRun, tileToPx, getDesks, getBins };
+
+const DEFAULT_HIVE_ACTS = {
+  request: "#4F9FAF",
+  query: "#9482D3",
+  propose: "#DCAB3C",
+  inform: "#FFF8E7",
+  agree: "#5CA97A",
+  done: "#5CA97A",
+  refuse: "#D96A62",
+};
 export const DESKS = new Proxy(
   {},
   {
@@ -110,6 +122,7 @@ function thoughtFor(run) {
   if (run.conflict_detected || (run.escalation_reason || "").includes("conflict")) {
     return "matter conflict!";
   }
+  if (run.needs_reconsideration) return "reconsider this filing";
   if (run.needs_human || run.stage === "review") return "needs a human";
   const verb = QUIPS.work[run.stage] || run.stage;
   const name = (run.filename || "").slice(0, 18);
@@ -226,6 +239,41 @@ function drawFurniture(ctx) {
   ctx.fillStyle = "#fff8e7";
   ctx.font = "4px monospace";
   ctx.fillText("INBOX", hopper.x - 8, hopper.y + 3);
+}
+
+function drawMiniEnvelope(ctx, x, y, stamp) {
+  ctx.fillStyle = "#1a1320";
+  ctx.fillRect(x - 5, y - 4, 10, 8);
+  ctx.fillStyle = "#fff8e7";
+  ctx.fillRect(x - 4, y - 3, 8, 6);
+  ctx.fillStyle = stamp || "#a09f9f";
+  ctx.fillRect(x - 4, y - 3, 8, 2);
+}
+
+function drawTray(ctx, bin, pile, hover) {
+  const p = tileToPx(bin.tile);
+  ctx.fillStyle = "#6b5340";
+  ctx.fillRect(p.x - 11, p.y - 2, 22, 11);
+  ctx.fillStyle = hover ? "#fff8e7" : bin.color || "#c9a66b";
+  ctx.fillRect(p.x - 11, p.y - 5, 22, 4);
+  ctx.fillStyle = "#1a1320";
+  ctx.fillRect(p.x - 11, p.y - 5, 22, 1);
+  const stack = (pile || []).slice(0, 6);
+  stack.forEach((run, i) => {
+    const ox = (i % 3) * 5 - 5;
+    const oy = -7 - Math.floor(i / 3) * 4;
+    drawMiniEnvelope(ctx, p.x + ox, p.y + oy, run.stamp);
+  });
+  ctx.fillStyle = "#fff8e7";
+  ctx.font = "4px monospace";
+  ctx.fillText(bin.label || "BIN", p.x - 10, p.y + 13);
+  if (pile?.length) {
+    ctx.fillStyle = "#1a1320";
+    ctx.fillRect(p.x + 6, p.y - 12, 8, 7);
+    ctx.fillStyle = "#f4d35e";
+    ctx.font = "5px monospace";
+    ctx.fillText(String(pile.length), p.x + 7, p.y - 7);
+  }
 }
 
 function drawDeskSet(ctx, desk, working) {
@@ -385,6 +433,8 @@ export class OfficeFloor {
     this.onSelect = onSelect;
     this.runs = new Map();
     this.envelopes = [];
+    this.piles = {};
+    this.hiveActs = { ...DEFAULT_HIVE_ACTS };
     this.avatars = {};
     this.lastDesk = {};
     this.t = 0;
@@ -392,6 +442,8 @@ export class OfficeFloor {
     this.themeSource = "procedural";
     this.ready = false;
     this._pendingSnapshot = null;
+    this.replayTimers = [];
+    this.errandSpot = [21, 10];
     this.booted = Promise.resolve();
     canvas.addEventListener("click", (ev) => this._click(ev));
     canvas.addEventListener("mousemove", (ev) => this._hover(ev));
@@ -417,7 +469,8 @@ export class OfficeFloor {
     if (this._pendingSnapshot) {
       const queued = this._pendingSnapshot;
       this._pendingSnapshot = null;
-      this.applySnapshot(queued);
+      if (Array.isArray(queued)) this.applySnapshot(queued);
+      else this.applySnapshot(queued.runs || [], queued.binIndex);
     }
     this._announceTheme();
   }
@@ -425,7 +478,7 @@ export class OfficeFloor {
   _announceTheme() {
     const legend = document.querySelector("[data-testid='floor-legend']");
     if (legend && layout.source === "limezu") {
-      legend.textContent = "LimeZu interiors · click an avatar, envelope, or desk · gold thought = live work";
+      legend.textContent = "LimeZu interiors · click a tray, avatar, envelope, or desk · gold thought = live work";
     }
     const credit = document.getElementById("limezu-credit");
     if (credit) {
@@ -435,6 +488,7 @@ export class OfficeFloor {
       theme: layout.source,
       desktop: Boolean(window.mailroomDesktop?.isDesktop),
       desks: Object.keys(getDesks()),
+      bins: Object.keys(getBins()),
       cols: layout.cols,
       rows: layout.rows,
     };
@@ -453,31 +507,48 @@ export class OfficeFloor {
     this.canvas.dataset.theme = layout.source;
   }
 
-  applySnapshot(runs) {
+  setHiveActs(acts) {
+    this.hiveActs = { ...DEFAULT_HIVE_ACTS, ...(acts || {}) };
+  }
+
+  applySnapshot(runs, binIndex) {
     if (!this.ready) {
-      this._pendingSnapshot = runs;
+      this._pendingSnapshot = { runs, binIndex };
       return;
     }
     const seen = new Set();
     const busy = {};
     const desks = getDesks();
+    const piles = { inbox: [], classified: [], review: [], archive: [], failed: [] };
     for (const run of runs) {
       seen.add(run.doc_id);
       const prev = this.runs.get(run.doc_id);
       const desk = deskForRun(run);
+      const tray = binForRun(run);
       if (prev && prev.desk && prev.desk !== desk) {
         this._fly(prev.desk, desk, run);
       } else if (!prev) {
         this._fly(null, desk, run);
       }
-      this.runs.set(run.doc_id, { ...run, desk });
+      this.runs.set(run.doc_id, { ...run, desk, tray });
       this.lastDesk[run.doc_id] = desk;
-      const active = run.stage !== "archived" && run.stage !== "failed";
+      if (tray && piles[tray]) piles[tray].push(this.runs.get(run.doc_id));
+      const active = run.stage !== "archived" && run.stage !== "failed" && run.stage !== "inbox" && run.stage !== "review";
       if (active) {
         const agent = desks[desk]?.agent;
         if (agent) busy[agent] = run;
       }
     }
+    if (binIndex) {
+      for (const [key, payload] of Object.entries(binIndex)) {
+        if (!piles[key]) piles[key] = [];
+        const have = new Set(piles[key].map((row) => row.doc_id));
+        for (const row of payload.documents || []) {
+          if (!have.has(row.doc_id)) piles[key].push(row);
+        }
+      }
+    }
+    this.piles = piles;
     for (const id of [...this.runs.keys()]) {
       if (!seen.has(id)) {
         const gone = this.runs.get(id);
@@ -520,7 +591,7 @@ export class OfficeFloor {
           to: toDesk.tile,
           t: 0,
           dur: 0.9,
-          stamp: event.needs_human ? "#d96a62" : "#f4d35e",
+          stamp: this.hiveActs[event.act] || (event.needs_human ? "#d96a62" : "#f4d35e"),
           act: event.act,
           label: event.subject,
           doc_id: event.doc_id,
@@ -536,8 +607,10 @@ export class OfficeFloor {
 
   _fly(fromKey, toKey, run) {
     const desks = getDesks();
+    const bins = getBins();
+    const tray = binForRun(run);
     const from = fromKey ? desks[fromKey]?.tile : layout.entrance;
-    const to = desks[toKey]?.tile || layout.entrance;
+    const to = (tray && bins[tray]?.tile) || desks[toKey]?.tile || layout.entrance;
     this.envelopes.push({
       from,
       to,
@@ -558,6 +631,7 @@ export class OfficeFloor {
     for (const env of this.envelopes) env.t += dt / env.dur;
     this.envelopes = this.envelopes.filter((e) => e.t < 1.15);
     for (const avatar of Object.values(this.avatars)) avatar.step(dt);
+    if (Math.random() < dt * 0.02) this._spawnErrand();
     this.draw();
     requestAnimationFrame((n) => this._tick(n));
   }
@@ -593,6 +667,10 @@ export class OfficeFloor {
     }
 
     if (layout.source === "limezu") drawRoomPlates(ctx);
+
+    for (const [key, bin] of Object.entries(getBins())) {
+      drawTray(ctx, bin, this.piles[key] || [], this.hover === `bin:${key}`);
+    }
 
     for (const [key, desk] of Object.entries(getDesks())) {
       const working = Boolean(this.avatars[desk.agent]?.work);
@@ -665,6 +743,14 @@ export class OfficeFloor {
     return null;
   }
 
+  _hitBin(x, y) {
+    for (const [key, bin] of Object.entries(getBins())) {
+      const p = tileToPx(bin.tile);
+      if (Math.abs(x - p.x) < 14 && Math.abs(y - p.y) < 16) return key;
+    }
+    return null;
+  }
+
   _hitAvatar(x, y) {
     for (const avatar of Object.values(this.avatars)) {
       if (Math.abs(x - avatar.x) < 8 && Math.abs(y - avatar.y) < 14) return avatar;
@@ -685,7 +771,8 @@ export class OfficeFloor {
 
   _hover(ev) {
     const { x, y } = this._pos(ev);
-    this.hover = this._hitDesk(x, y);
+    const bin = this._hitBin(x, y);
+    this.hover = bin ? `bin:${bin}` : this._hitDesk(x, y);
   }
 
   _click(ev) {
@@ -693,6 +780,21 @@ export class OfficeFloor {
     const env = this._hitEnvelope(x, y);
     if (env && env.doc_id) {
       this.onSelect(this.runs.get(env.doc_id) || { doc_id: env.doc_id, filename: env.label });
+      return;
+    }
+    const trayKey = this._hitBin(x, y);
+    if (trayKey) {
+      const bin = getBins()[trayKey];
+      const pile = this.piles[trayKey] || [];
+      this.onSelect({
+        tray: trayKey,
+        tab: bin?.tab || trayKey,
+        filename: `${bin?.label || trayKey} tray`,
+        thought: pile.length ? `${pile.length} filing${pile.length === 1 ? "" : "s"} in the ${trayKey} bin` : `empty ${trayKey} bin`,
+        documents: pile,
+        stage: trayKey,
+        bin: trayKey,
+      });
       return;
     }
     const person = this._hitAvatar(x, y);
@@ -703,7 +805,74 @@ export class OfficeFloor {
     const deskKey = this._hitDesk(x, y);
     if (!deskKey) return;
     const desk = getDesks()[deskKey];
-    const run = [...this.runs.values()].find((r) => r.desk === deskKey);
+    const run = [...this.runs.values()].find((r) => r.desk === deskKey && !r.tray);
     this.onSelect(run || { desk: deskKey, agent: desk.agent, filename: desk.label });
+  }
+
+  clearReplayTimers() {
+    for (const timer of this.replayTimers) clearTimeout(timer);
+    this.replayTimers = [];
+  }
+
+  replay(runData) {
+    this.clearReplayTimers();
+    const replayId = runData.trace_id || runData.doc_id;
+    if (!replayId) return;
+    const spanToStage = {
+      "ingest-document": "ingest",
+      "classify-document": "classify",
+      "extract-fields": "extract",
+      "judge-verify": "judge_verify",
+      "arbitrate-verdict": "arbiter",
+      "compile-report": "report",
+      "archive-document": "archived",
+    };
+    let sequence = (runData.routing_path || []).slice();
+    const spans = runData.spans || [];
+    if (spans.length) {
+      sequence = spans
+        .map((span) => spanToStage[span.name] || span.name)
+        .filter(Boolean);
+    }
+    if (!sequence.length) sequence = ["ingest", "classify", "extract", "archive", "archived"];
+    const baseRun = {
+      doc_id: replayId,
+      trace_id: replayId,
+      filename: runData.filename,
+      doc_type: runData.doc_type,
+      stage: sequence[0],
+      routing_path: sequence,
+    };
+    this.runs.set(replayId, { ...baseRun, desk: deskForRun(baseRun) });
+    let delay = 0;
+    for (const stage of sequence) {
+      const timer = setTimeout(() => {
+        const current = this.runs.get(replayId);
+        if (!current) return;
+        current.stage = stage;
+        current.desk = deskForRun(current);
+        this.runs.set(replayId, current);
+      }, delay);
+      this.replayTimers.push(timer);
+      const span = spans.find((row) => (spanToStage[row.name] || row.name) === stage);
+      delay += Math.min(1800, Math.max(350, Number(span?.latency_ms || 600)));
+    }
+    const endTimer = setTimeout(() => {
+      const current = this.runs.get(replayId);
+      if (current) {
+        current.stage = runData.stage || "archived";
+        this.runs.set(replayId, current);
+      }
+    }, delay + 400);
+    this.replayTimers.push(endTimer);
+  }
+
+  _spawnErrand() {
+    const idle = Object.values(this.avatars).filter((a) => !a.work && a.status === "idle");
+    if (!idle.length) return;
+    const avatar = idle[Math.floor(Math.random() * idle.length)];
+    avatar.thought = Math.random() > 0.5 ? "coffee run" : "errand";
+    avatar.walkTo(this.errandSpot);
+    avatar.linger = 2.2;
   }
 }

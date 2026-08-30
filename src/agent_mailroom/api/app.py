@@ -13,6 +13,7 @@ from agent_mailroom.api.ws import bind_loop, hub
 from agent_mailroom.config.loader import base_dir
 from agent_mailroom.hive.mailbox import seed_hive
 from agent_mailroom.office_theme import office_dir
+from agent_mailroom.operator.auth import router as auth_router
 from agent_mailroom.pipeline.bins import ensure_bins
 from agent_mailroom.pipeline.watcher import start_watcher, stop_watcher
 from agent_mailroom.storage.db import init_db
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(router)
     app.include_router(router, prefix="/v1")
+    app.include_router(auth_router)
 
     @app.websocket("/ws")
     async def websocket_floor(ws: WebSocket) -> None:

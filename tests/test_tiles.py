@@ -49,3 +49,8 @@ def test_manifest_desks_sit_on_walkable_spawns():
         gid = collision[y * width + x] & GID_MASK
         assert gid == 0, f"{key} spawn sits on a collision tile"
     assert "entrance" in spawns
+    for key, spec in (manifest.get("bins") or {}).items():
+        assert spec["spawn"] in spawns, f"{key} missing spawn {spec['spawn']}"
+        x, y = spawns[spec["spawn"]]
+        gid = collision[y * width + x] & GID_MASK
+        assert gid == 0, f"{key} bin sits on a collision tile"

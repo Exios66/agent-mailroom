@@ -9,6 +9,7 @@ from agent_mailroom.hive.mailbox import deliver
 from agent_mailroom.pipeline import nodes, routing
 from agent_mailroom.pipeline.bins import (
     archive_dir,
+    copy_classified,
     ensure_bins,
     failed_dir,
     move_file,
@@ -16,11 +17,12 @@ from agent_mailroom.pipeline.bins import (
     review_dir,
     write_manifest,
 )
+from agent_mailroom.observability.tracing import span_context
 from agent_mailroom.pipeline.events import emit
 from agent_mailroom.pipeline.state import RunState
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 from agent_mailroom.storage.audit import write_audit
-from agent_mailroom.storage.catalog import upsert_document
+from agent_mailroom.storage.catalog import touch_matter, upsert_document
 
 STAGE_FOR_NODE = {
     "ingest": "ingest",
@@ -78,6 +80,7 @@ def _persist(state: RunState, *, stage: PipelineStage | None = None) -> Document
         trace_id=state.doc_id,
     )
     upsert_document(manifest)
+    touch_matter(state.matter_id)
     write_manifest(state.doc_id, manifest.model_dump(mode="json"))
     return manifest
 
@@ -140,6 +143,34 @@ def _audit(state: RunState, event: str, actor: str, detail: dict | None = None) 
     )
 
 
+STAGE_SPAN = {
+    "ingest": "ingest-document",
+    "classify": "classify-document",
+    "retry_classify": "classify-document",
+    "review_classify": "classify-document",
+    "extract": "extract-fields",
+    "retry_extract": "extract-fields",
+    "judge_verify": "judge-verify",
+    "arbiter": "arbitrate-verdict",
+    "boss_escalation": "adjudicate-conflict",
+    "compile_report": "compile-report",
+    "archive": "archive-document",
+}
+
+
+def _run_node(state: RunState, node: str, fn) -> RunState:
+    span_name = STAGE_SPAN.get(node, node)
+    with span_context(state.doc_id, span_name, state=state) as holder:
+        result = fn()
+        holder["output"] = {
+            "stage": result.stage,
+            "doc_type": result.doc_type,
+            "classification_confidence": result.classification_confidence,
+            "extraction_confidence": result.extraction_confidence,
+        }
+        return result
+
+
 def run_document(
     file_path: Path,
     *,
@@ -185,7 +216,7 @@ def run_document(
 
         if node == "ingest":
             try:
-                nodes.node_ingest(state)
+                state = _run_node(state, node, lambda: nodes.node_ingest(state))
             except Exception as exc:
                 return fail_document(state, f"ingest failed: {exc}")
             _broadcast(state, node, actor)
@@ -193,19 +224,28 @@ def run_document(
             continue
         if node in {"classify", "retry_classify"}:
             try:
-                nodes.node_classify(state, reviewer=False)
+                state = _run_node(state, node, lambda: nodes.node_classify(state, reviewer=False))
             except Exception as exc:
                 state.escalation_reason = f"classify failed: {exc}"
                 state.doc_type = state.doc_type or "unknown"
                 return park_for_review(state)
             _audit(state, "classified", "sorter", {"doc_type": state.doc_type, "confidence": state.classification_confidence})
+            try:
+                copy_classified(
+                    state.file_path,
+                    doc_id=state.doc_id,
+                    doc_type=state.doc_type or "unknown",
+                    filename=state.original_filename,
+                )
+            except OSError:
+                pass
             _persist(state)
             _broadcast(state, node, actor)
             node = routing.after_classify(state, retry=node == "retry_classify")
             continue
         if node == "review_classify":
             try:
-                nodes.node_classify(state, reviewer=True)
+                state = _run_node(state, node, lambda: nodes.node_classify(state, reviewer=True))
             except Exception as exc:
                 state.escalation_reason = f"review-classify failed: {exc}"
                 return park_for_review(state)
@@ -214,7 +254,7 @@ def run_document(
             continue
         if node in {"extract", "retry_extract"}:
             try:
-                nodes.node_extract(state)
+                state = _run_node(state, node, lambda: nodes.node_extract(state))
             except Exception as exc:
                 state.escalation_reason = f"extract failed: {exc}"
                 return park_for_review(state)
@@ -227,7 +267,7 @@ def run_document(
             continue
         if node == "judge_verify":
             try:
-                nodes.node_judge(state)
+                state = _run_node(state, node, lambda: nodes.node_judge(state))
             except Exception as exc:
                 state.escalation_reason = f"judge failed: {exc}"
                 return park_for_review(state)
@@ -236,7 +276,7 @@ def run_document(
             continue
         if node == "arbiter":
             try:
-                nodes.node_arbiter(state)
+                state = _run_node(state, node, lambda: nodes.node_arbiter(state))
             except Exception as exc:
                 state.escalation_reason = f"arbiter failed: {exc}"
                 return park_for_review(state)
@@ -245,7 +285,7 @@ def run_document(
             continue
         if node == "boss_escalation":
             try:
-                nodes.node_boss(state)
+                state = _run_node(state, node, lambda: nodes.node_boss(state))
             except Exception as exc:
                 state.escalation_reason = f"boss failed: {exc}"
                 return park_for_review(state)
@@ -256,7 +296,7 @@ def run_document(
         if node == "human_review":
             return park_for_review(state)
         if node == "compile_report":
-            nodes.node_report(state)
+            state = _run_node(state, node, lambda: nodes.node_report(state))
             _broadcast(state, node, actor)
             node = "catalog_write" if state.report else "human_review"
             continue

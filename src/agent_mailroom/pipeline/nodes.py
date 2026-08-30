@@ -5,6 +5,7 @@ from agent_mailroom.config.loader import specialist_for
 from agent_mailroom.pipeline.conflicts import detect_conflict
 from agent_mailroom.pipeline.guards import guard_classification, guard_extraction
 from agent_mailroom.pipeline.ingest import read_document
+from agent_mailroom.llm.vision import render_document_pages
 from agent_mailroom.pipeline.state import RunState
 
 
@@ -12,6 +13,8 @@ def node_ingest(state: RunState) -> RunState:
     state.stage = "processing"
     if not state.doc_text:
         state.doc_text = read_document(state.file_path)
+    if not state.doc_pages:
+        state.doc_pages = render_document_pages(state.file_path)
     return state
 
 

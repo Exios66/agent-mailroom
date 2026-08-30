@@ -1,4 +1,4 @@
-import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=limezu2";
+import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom6";
 
 export const TILE = 16;
 export const SCALE = 2;
@@ -41,6 +41,14 @@ export const PROCEDURAL_DESKS = {
   "desk-claims": { tile: [35, 19], agent: "insurance_claims_specialist", label: "Meredith", face: "down" },
 };
 
+export const PROCEDURAL_BINS = {
+  inbox: { tile: [18, 4], label: "INBOX", tab: "inbox", color: "#7d97b5" },
+  classified: { tile: [21, 4], label: "SORTED", tab: "inbox", color: "#f4d35e" },
+  review: { tile: [7, 4], label: "REVIEW", tab: "review", color: "#f4d35e" },
+  archive: { tile: [6, 12], label: "ARCHIVE", tab: "archive", color: "#5ca97a" },
+  failed: { tile: [3, 14], label: "RETURNS", tab: "failed", color: "#d96a62" },
+};
+
 const PROCEDURAL_WANDER = [
   [19, 14],
   [19, 22],
@@ -74,11 +82,18 @@ function cloneDesks(src) {
   );
 }
 
+function cloneBins(src) {
+  return Object.fromEntries(
+    Object.entries(src).map(([key, bin]) => [key, { ...bin, tile: [...bin.tile] }]),
+  );
+}
+
 export const layout = {
   source: "procedural",
   cols: 40,
   rows: 24,
   desks: cloneDesks(PROCEDURAL_DESKS),
+  bins: cloneBins(PROCEDURAL_BINS),
   rooms: PROCEDURAL_ROOMS.map((r) => ({ ...r })),
   entrance: [19, 22],
   wander: PROCEDURAL_WANDER.map((t) => [...t]),
@@ -92,6 +107,7 @@ export function resetLayout() {
   layout.cols = 40;
   layout.rows = 24;
   layout.desks = cloneDesks(PROCEDURAL_DESKS);
+  layout.bins = cloneBins(PROCEDURAL_BINS);
   layout.rooms = PROCEDURAL_ROOMS.map((r) => ({ ...r }));
   layout.entrance = [19, 22];
   layout.wander = PROCEDURAL_WANDER.map((t) => [...t]);
@@ -128,6 +144,19 @@ export function applyTiledLayout({ manifest, map, tilesets, below, above }) {
     };
     grid[tile[1] * map.width + tile[0]] = 1;
   }
+  const bins = {};
+  for (const [key, spec] of Object.entries(manifest.bins || {})) {
+    const tile = spawns[spec.spawn];
+    if (!tile) continue;
+    bins[key] = {
+      tile,
+      label: spec.label || key.toUpperCase(),
+      tab: spec.tab || key,
+      color: spec.color || "#f4d35e",
+      spawn: spec.spawn,
+    };
+    grid[tile[1] * map.width + tile[0]] = 1;
+  }
   const entrance = spawns.entrance || [Math.floor(map.width / 2), map.height - 2];
   grid[entrance[1] * map.width + entrance[0]] = 1;
 
@@ -139,6 +168,7 @@ export function applyTiledLayout({ manifest, map, tilesets, below, above }) {
   layout.cols = map.width;
   layout.rows = map.height;
   layout.desks = desks;
+  layout.bins = Object.keys(bins).length ? bins : cloneBins(PROCEDURAL_BINS);
   layout.rooms = (manifest.rooms || []).map((r) => ({ ...r }));
   layout.entrance = entrance;
   layout.wander = wander.length ? wander : [entrance];
@@ -193,6 +223,21 @@ export function deskForRun(run) {
   return STAGE_DESK[run.stage] || "desk-reception";
 }
 
+export function binForRun(run) {
+  const stage = run?.stage;
+  const bin = run?.bin;
+  if (stage === "inbox" || bin === "inbox") return "inbox";
+  if (stage === "review" || bin === "review") return "review";
+  if (stage === "archived" || stage === "archive" || bin === "archive") return "archive";
+  if (stage === "failed" || bin === "failed") return "failed";
+  if (stage === "classified" || bin === "classified") return "classified";
+  return run?.tray || null;
+}
+
 export function getDesks() {
   return layout.desks;
+}
+
+export function getBins() {
+  return layout.bins;
 }

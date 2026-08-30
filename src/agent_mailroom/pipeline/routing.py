@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import os
+
 from agent_mailroom.config.loader import confidence, extractable_types
 from agent_mailroom.pipeline.state import RunState
+
+
+def judge_enabled() -> bool:
+    raw = os.environ.get("MAILROOM_JUDGE_VERIFY", "on").strip().lower()
+    return raw not in {"0", "off", "false", "no"}
 
 END = "END"
 HUMAN = "human_review"
@@ -43,7 +50,7 @@ def after_extract(state: RunState) -> str:
         return "boss_escalation"
     score = state.extraction_confidence or 0.0
     if score >= cfg["low"]:
-        if cfg["low"] <= score < cfg["judge_band_high"]:
+        if cfg["low"] <= score < cfg["judge_band_high"] and judge_enabled():
             return "judge_verify"
         return "compile_report"
     if state.extraction_attempts <= cfg["retry_max"]:

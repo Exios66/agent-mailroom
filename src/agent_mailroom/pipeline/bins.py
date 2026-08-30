@@ -40,6 +40,13 @@ def hive_dir() -> Path:
     return _ensure(_path("hive"))
 
 
+def classified_dir(doc_type: str | None = None) -> Path:
+    root = _ensure(_path("classified"))
+    if doc_type:
+        return _ensure(root / (doc_type or "unknown"))
+    return root
+
+
 def _ensure(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -48,6 +55,7 @@ def _ensure(path: Path) -> Path:
 def ensure_bins() -> None:
     inbox_dir()
     _ensure(_path("processing"))
+    classified_dir()
     review_dir()
     failed_dir()
     _ensure(_path("archive"))
@@ -95,6 +103,18 @@ def enqueue_inbox(
             "filename": name,
         },
     )
+    from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
+    from agent_mailroom.storage.catalog import upsert_document
+
+    upsert_document(
+        DocumentManifest(
+            doc_id=doc_id,
+            matter_id=matter_id,
+            original_filename=name,
+            stage=PipelineStage.INBOX,
+            graph_node="inbox",
+        )
+    )
     return dest
 
 
@@ -121,6 +141,78 @@ def inbox_pending() -> list[Path]:
         for path in inbox_dir().iterdir()
         if path.is_file() and not path.name.endswith(".meta") and not path.name.startswith(".")
     ]
+
+
+def read_inbox_meta(path: Path) -> dict:
+    sidecar = path.with_suffix(path.suffix + ".meta")
+    if sidecar.exists():
+        return json.loads(sidecar.read_text(encoding="utf-8"))
+    name = path.name
+    doc_id = name.split("--", 1)[0] if "--" in name else ""
+    return {"doc_id": doc_id, "filename": name, "matter_id": "DEFAULT", "source": "drop"}
+
+
+def list_classified_snapshots(limit: int = 80) -> list[dict]:
+    """Filesystem snapshots written after classify. Live file may have moved on."""
+    ensure_bins()
+    root = classified_dir()
+    rows: list[dict] = []
+    for path in sorted(root.rglob("*"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if not path.is_file() or "--" not in path.name:
+            continue
+        doc_id, name = path.name.split("--", 1)
+        rows.append(
+            {
+                "doc_id": doc_id,
+                "filename": name,
+                "doc_type": path.parent.name if path.parent != root else "unknown",
+                "bin": "classified",
+                "path": str(path),
+            }
+        )
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def copy_classified(src: Path, *, doc_id: str, doc_type: str, filename: str) -> Path:
+    dest_dir = classified_dir(doc_type or "unknown")
+    dest = dest_dir / f"{doc_id}--{safe_filename(filename)}"
+    dest.write_bytes(src.read_bytes())
+    return dest
+
+
+def locate_document(doc_id: str) -> dict:
+    """Find the on-disk tray for a document. Classified is a snapshot; live file wins."""
+    ensure_bins()
+    for path in inbox_pending():
+        meta = read_inbox_meta(path)
+        if meta.get("doc_id") == doc_id or path.name.startswith(f"{doc_id}--"):
+            return {"bin": "inbox", "path": path}
+    proc = _path("processing") / doc_id
+    if proc.exists():
+        files = [p for p in proc.iterdir() if p.is_file()]
+        if files:
+            return {"bin": "processing", "path": files[0]}
+    parked = next(review_dir().glob(f"{doc_id}--*"), None)
+    if parked:
+        return {"bin": "review", "path": parked}
+    failed = next(failed_dir().glob(f"{doc_id}--*"), None)
+    if failed:
+        return {"bin": "failed", "path": failed}
+    archive_root = _path("archive")
+    if archive_root.exists():
+        hits = sorted(archive_root.rglob(f"{doc_id}--*"))
+        files = [p for p in hits if p.is_file()]
+        if files:
+            return {"bin": "archive", "path": files[0]}
+    classified_root = _path("classified")
+    if classified_root.exists():
+        hits = sorted(classified_root.rglob(f"{doc_id}--*"))
+        files = [p for p in hits if p.is_file()]
+        if files:
+            return {"bin": "classified", "path": files[0]}
+    return {"bin": None, "path": None}
 
 
 def move_file(src: Path, dest_dir: Path, name: str | None = None) -> Path:
