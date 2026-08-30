@@ -52,13 +52,16 @@ def compile_matter_record(manifest_data: dict[str, Any]) -> dict[str, Any]:
 
     arbiter_decision = manifest_data.get("arbiter_decision")
     arbiter_reasoning = manifest_data.get("arbiter_reasoning")
-    if arbiter_decision == "accept_with_caveats" or arbiter_reasoning:
+    arbiter_handoff = manifest_data.get("arbiter_handoff")
+    if arbiter_decision == "accept_with_caveats" or arbiter_reasoning or arbiter_handoff:
         lines.append("")
         lines.append("Caveats:")
         if arbiter_decision:
             lines.append(f"- arbiter_decision: {arbiter_decision}")
         if arbiter_reasoning:
             lines.append(f"- reasoning: {arbiter_reasoning}")
+        if arbiter_handoff:
+            lines.append(f"- handoff: {arbiter_handoff}")
 
     judge_verdict = manifest_data.get("judge_verdict")
     if judge_verdict:

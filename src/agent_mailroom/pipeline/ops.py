@@ -4,35 +4,42 @@ from pathlib import Path
 from typing import Any
 
 from agent_mailroom.hive.mailbox import deliver
-from agent_mailroom.pipeline.bins import locate_document
+from agent_mailroom.pipeline.bins import locate_document, requeue_stale_processing
 from agent_mailroom.pipeline.reconsider import enrich_row
-from agent_mailroom.pipeline.state import RunState
-from agent_mailroom.storage.catalog import list_documents_by_stage, list_review_queue, stuck_documents
+from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
+from agent_mailroom.storage.catalog import list_documents_by_stage, list_review_queue, stuck_documents, upsert_document
 
 
 def recover_stuck(minutes: int = 15) -> list[dict[str, Any]]:
-    """Park stale in-flight claims on review so the floor does not lie."""
-    from agent_mailroom.pipeline.runner import park_for_review
+    """Requeue stale processing claims to the inbox (idempotent --stale).
 
+    Matches llm-mailroom v0.6.0: duplicate inbox bytes are dropped; name
+    collisions get a ``--stale`` suffix. Catalog row returns to ``inbox``.
+    """
     recovered: list[dict[str, Any]] = []
     for row in stuck_documents(minutes):
         loc = locate_document(row["doc_id"])
         path = loc.get("path")
-        if not path or loc.get("bin") not in {"processing", "classified", "inbox"}:
+        if not path or loc.get("bin") not in {"processing", "classified"}:
             continue
-        data = row.get("extracted_data") if isinstance(row.get("extracted_data"), dict) else None
-        state = RunState(
-            doc_id=row["doc_id"],
-            matter_id=row["matter_id"],
-            original_filename=row["original_filename"],
-            file_path=Path(path),
-            doc_type=row.get("doc_type"),
-            extracted_data=data,
-            routing_path=list(row.get("routing_path") or []),
-            escalation_reason="stuck in processing — recovered by ops",
+        try:
+            dest = requeue_stale_processing(Path(path))
+        except OSError:
+            continue
+        upsert_document(
+            DocumentManifest(
+                doc_id=row["doc_id"],
+                matter_id=row["matter_id"],
+                original_filename=row["original_filename"],
+                stage=PipelineStage.INBOX,
+                graph_node="inbox",
+                doc_type=row.get("doc_type"),
+                extracted_data=row.get("extracted_data") if isinstance(row.get("extracted_data"), dict) else None,
+                routing_path=list(row.get("routing_path") or []),
+                escalation_reason="stuck in processing — requeued by ops",
+            )
         )
-        park_for_review(state)
-        recovered.append({"doc_id": row["doc_id"], "from_bin": loc["bin"]})
+        recovered.append({"doc_id": row["doc_id"], "from_bin": loc["bin"], "inbox_path": str(dest)})
     return recovered
 
 

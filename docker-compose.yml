@@ -12,12 +12,17 @@ services:
       MAILROOM_HOST: "0.0.0.0"
       MAILROOM_PORT: "8000"
       MAILROOM_BASE_DIR: /app/data
+      # Token rotation (GitGuardian-clean empty passthrough)
+      MAILROOM_API_TOKEN: ${MAILROOM_API_TOKEN:-}
+      MAILROOM_API_TOKENS: ${MAILROOM_API_TOKENS:-}
+      MAILROOM_API_TOKEN_REVOKED: ${MAILROOM_API_TOKEN_REVOKED:-}
       # Reach Ollama (or other local servers) on the host from the container:
       # OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
     volumes:
       - ./data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    user: "10001:10001"
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped

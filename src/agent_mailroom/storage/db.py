@@ -41,7 +41,10 @@ CREATE TABLE IF NOT EXISTS documents (
     judge_findings TEXT,
     arbiter_decision TEXT,
     arbiter_reasoning TEXT,
+    arbiter_handoff TEXT,
+    arbiter_fields_to_fix TEXT,
     arbiter_retry_count INTEGER DEFAULT 0,
+    failure_class TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -146,7 +149,10 @@ def _ensure_document_judgment_columns(conn: sqlite3.Connection) -> None:
         ("judge_findings", "TEXT"),
         ("arbiter_decision", "TEXT"),
         ("arbiter_reasoning", "TEXT"),
+        ("arbiter_handoff", "TEXT"),
+        ("arbiter_fields_to_fix", "TEXT"),
         ("arbiter_retry_count", "INTEGER DEFAULT 0"),
+        ("failure_class", "TEXT"),
     ]
     for name, decl in alters:
         if name not in existing:

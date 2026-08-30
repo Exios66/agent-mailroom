@@ -164,8 +164,18 @@ def judge(extracted: dict[str, Any]) -> dict[str, Any]:
 
 def arbiter(judge_verdict: str) -> dict[str, Any]:
     if judge_verdict == "partial":
-        return {"decision": "accept_with_caveats", "reasoning": "usable extraction with gaps"}
-    return {"decision": "human_review", "reasoning": "cannot resolve"}
+        return {
+            "decision": "accept_with_caveats",
+            "reasoning": "usable extraction with gaps",
+            "fields_to_fix": [],
+            "handoff_summary": None,
+        }
+    return {
+        "decision": "human_review",
+        "reasoning": "cannot resolve",
+        "fields_to_fix": [],
+        "handoff_summary": "Lane B exhausted — needs operator eyes",
+    }
 
 
 def boss(conflict: bool) -> dict[str, Any]:

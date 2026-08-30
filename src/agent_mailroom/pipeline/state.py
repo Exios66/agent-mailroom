@@ -33,7 +33,10 @@ class RunState:
     judge_pass_count: int = 0
     arbiter_decision: str | None = None
     arbiter_reasoning: str | None = None
+    arbiter_handoff: str | None = None
+    arbiter_fields_to_fix: list[str] | None = None
     arbiter_retry_count: int = 0
+    failure_class: str | None = None
     resume_extraction: bool = False
     halt: bool = False
     terminal: str | None = None
@@ -60,5 +63,8 @@ class RunState:
             "judge_score": self.judge_score,
             "arbiter_decision": self.arbiter_decision,
             "arbiter_reasoning": self.arbiter_reasoning,
+            "arbiter_handoff": self.arbiter_handoff,
+            "arbiter_fields_to_fix": list(self.arbiter_fields_to_fix or []),
             "arbiter_retry_count": self.arbiter_retry_count,
+            "failure_class": self.failure_class,
         }

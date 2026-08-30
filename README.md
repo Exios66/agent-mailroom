@@ -18,7 +18,8 @@ Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom) *
 - **OpenRouter-first harness** — primary provider is OpenRouter; add OpenAI, Ollama, vLLM, or a generic OpenAI-compatible endpoint. Missing keys fall back to `mock`.
 - **Hive mailboxes** — one JSON file per message, single-writer desks, speech acts (`request`, `inform`, `query`, …)
 - **Office floor** — LimeZu rooms, walking avatars, thought clouds, flying envelopes
-- **Mailroom desks** — inbox hopper, full review siding (record/complete/source), archive + audit verify, returns, matters, inspect (hash chain + source), lookup, ops recover/sweep
+- **Mailroom desks** — inbox hopper, full review siding (record/complete/source download), archive + audit verify, returns, matters, inspect (hash chain + source), lookup, ops recover/sweep
+- **Hard aborts** — timeouts / auth / rate-limit / I/O land in Returns with `failure_class`; Complete rejects cross-class extraction; API token rotation via `MAILROOM_API_TOKENS` / `MAILROOM_API_TOKEN_REVOKED`
 - **Floor trays** — clickable inbox / sorted / review / archive / returns crates on the walking floor, with stamp-colored piles
 - **Desktop shell** — optional hardened Electron window around the same `/office/` UI the browser uses
 - **SQLite-first** — `data/mailroom.db` + filesystem bins. Local venv or Docker.

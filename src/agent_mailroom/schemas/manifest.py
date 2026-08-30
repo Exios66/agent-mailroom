@@ -45,6 +45,9 @@ class DocumentManifest(BaseModel):
     judge_findings: list[str] | None = None
     arbiter_decision: str | None = None
     arbiter_reasoning: str | None = None
+    arbiter_handoff: str | None = None
+    arbiter_fields_to_fix: list[str] | None = None
     arbiter_retry_count: int = 0
+    failure_class: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)

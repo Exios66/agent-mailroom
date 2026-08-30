@@ -122,7 +122,7 @@ def floor_run(row: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def read_source_text(path: Path, limit: int = 12000) -> str:
+def read_source_text(path: Path, limit: int = 200_000) -> str:
     raw = path.read_bytes()
     text = raw.decode("utf-8", errors="replace")
     if len(text) > limit:
