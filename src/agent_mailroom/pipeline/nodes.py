@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from agent_mailroom.agents.base import run_agent
 from agent_mailroom.config.loader import specialist_for
+from agent_mailroom.pipeline.conflicts import detect_conflict
 from agent_mailroom.pipeline.guards import guard_classification, guard_extraction
+from agent_mailroom.pipeline.ingest import read_document
 from agent_mailroom.pipeline.state import RunState
 
 
 def node_ingest(state: RunState) -> RunState:
     state.stage = "processing"
     if not state.doc_text:
-        state.doc_text = state.file_path.read_text(encoding="utf-8", errors="replace")
+        state.doc_text = read_document(state.file_path)
     return state
 
 
@@ -39,6 +41,10 @@ def node_extract(state: RunState) -> RunState:
     state.extraction_attempts += 1
     if flags:
         state.escalation_reason = ",".join(flags)
+    conflict, reason = detect_conflict(state)
+    state.conflict_detected = conflict
+    if conflict:
+        state.escalation_reason = reason
     return state
 
 

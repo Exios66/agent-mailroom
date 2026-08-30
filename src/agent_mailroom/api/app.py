@@ -14,6 +14,7 @@ from agent_mailroom.api.ws import bind_loop, hub
 from agent_mailroom.config.loader import base_dir
 from agent_mailroom.hive.mailbox import seed_hive
 from agent_mailroom.pipeline.bins import ensure_bins
+from agent_mailroom.pipeline.watcher import start_watcher, stop_watcher
 from agent_mailroom.storage.db import init_db
 
 def _office_dir() -> Path:
@@ -38,7 +39,11 @@ async def lifespan(app: FastAPI):
     ensure_bins()
     init_db()
     seed_hive()
-    yield
+    start_watcher()
+    try:
+        yield
+    finally:
+        stop_watcher()
 
 
 def create_app() -> FastAPI:

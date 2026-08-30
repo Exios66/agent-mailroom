@@ -7,9 +7,22 @@ def test_health_and_meta():
     client = TestClient(create_app())
     health = client.get("/v1/health").json()
     assert health["status"] == "ok"
+    assert health["checks"]["watcher"] == "ok"
+    assert health["checks"]["watcher_embedded"] is False
     meta = client.get("/v1/meta").json()
     assert "contract" in meta["doc_classes"]
     assert "boss" in meta["agents"]
+
+
+def test_ops_status():
+    client = TestClient(create_app())
+    ops = client.get("/v1/ops/status").json()
+    assert ops["sync"] is True
+    assert ops["watcher"]["lamp"] == "ok"
+    assert "review_queue" in ops
+    assert "inbox_pending" in ops
+    assert "documents" in ops
+    assert "stuck_documents" in ops
 
 
 def test_upload_and_status(samples):

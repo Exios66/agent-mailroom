@@ -12,9 +12,10 @@ from pydantic import BaseModel, Field
 
 from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, stamp_color
 from agent_mailroom.hive.mailbox import list_inbox, roster_status
-from agent_mailroom.pipeline.bins import inbox_dir, review_dir
+from agent_mailroom.pipeline.bins import enqueue_inbox, inbox_pending, review_dir
 from agent_mailroom.pipeline.events import recent
-from agent_mailroom.pipeline.runner import fail_document, resume_from_review, run_document
+from agent_mailroom.pipeline.runner import fail_document, resume_from_review
+from agent_mailroom.pipeline.watcher import scan_inbox, status as watcher_status, watcher_lamp
 from agent_mailroom.pipeline.topics import (
     complete_topic,
     launch_queued_topic,
@@ -23,7 +24,7 @@ from agent_mailroom.pipeline.topics import (
     queue_topic,
 )
 from agent_mailroom.pipeline.state import RunState
-from agent_mailroom.storage.audit import list_audit, verify_chain
+from agent_mailroom.storage.audit import verify_chain
 from agent_mailroom.storage.catalog import get_document, list_documents, list_matters, list_review_queue
 
 router = APIRouter()
@@ -44,10 +45,31 @@ def _auth(authorization: str | None) -> None:
         raise HTTPException(status_code=401, detail="invalid token")
 
 
+def _accept_inbox(raw: bytes, filename: str, *, doc_id: str, matter_id: str, source: str) -> list[str]:
+    """Write inbox + sidecar. Drain immediately under MAILROOM_SYNC; else the watcher claims it."""
+    enqueue_inbox(raw, filename, doc_id=doc_id, matter_id=matter_id, source=source)
+    if os.environ.get("MAILROOM_SYNC") == "1":
+        return scan_inbox()
+    return []
+
+
+def _hive_stats() -> dict[str, Any]:
+    roster = roster_status()
+    return {
+        "agents": len(roster),
+        "inbox_total": sum(int(meta.get("inbox_count") or 0) for meta in roster.values()),
+    }
+
+
 @router.get("/health")
 def health() -> dict[str, Any]:
+    watch = watcher_status()
+    lamp = watcher_lamp()
+    overall = "ok"
+    if lamp in {"stale", "missing"}:
+        overall = "degraded"
     return {
-        "status": "ok",
+        "status": overall,
         "service": "agent-mailroom",
         "producer": True,
         "review_resolve": True,
@@ -55,8 +77,52 @@ def health() -> dict[str, Any]:
         "checks": {
             "llm_provider": os.environ.get("MAILROOM_LLM_PROVIDER", "mock"),
             "database": True,
-            "watcher": True,
+            "watcher": lamp,
+            "watcher_embedded": watch["running"],
+            "inbox_pending": watch["inbox_pending"],
+            "watcher_heartbeat_seconds_ago": watch["heartbeat_age"],
         },
+    }
+
+
+@router.get("/ops/status")
+def ops_status(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    from datetime import datetime, timezone
+
+    from agent_mailroom.storage.db import connect, init_db, locked
+
+    init_db()
+    by_stage: dict[str, int] = {}
+    by_class: dict[str, int] = {}
+    stuck = 0
+    with locked():
+        with connect() as conn:
+            for row in conn.execute("SELECT stage, COUNT(*) AS n FROM documents GROUP BY stage"):
+                by_stage[row["stage"]] = row["n"]
+            for row in conn.execute(
+                "SELECT COALESCE(doc_type, 'unknown') AS c, COUNT(*) AS n FROM documents GROUP BY doc_type"
+            ):
+                by_class[row["c"]] = row["n"]
+            stuck = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM documents
+                WHERE stage IN ('processing', 'classified')
+                  AND updated_at < datetime('now', '-15 minutes')
+                """
+            ).fetchone()["n"]
+    review = list_review_queue()
+    return {
+        "watcher": watcher_status(),
+        "inbox_pending": len(inbox_pending()),
+        "documents": by_stage,
+        "classes": by_class,
+        "review_queue": len(review),
+        "stuck_documents": stuck,
+        "hive": _hive_stats(),
+        "llm_provider": os.environ.get("MAILROOM_LLM_PROVIDER", "mock"),
+        "sync": os.environ.get("MAILROOM_SYNC") == "1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -74,9 +140,7 @@ async def upload(
     if len(raw) > 20 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="file too large")
     doc_id = str(uuid4())
-    dest = inbox_dir() / f"{doc_id}--{file.filename}"
-    dest.write_bytes(raw)
-    _spawn(run_document, file_path=dest, matter_id=matter_id, doc_id=doc_id)
+    _accept_inbox(raw, file.filename or "upload.bin", doc_id=doc_id, matter_id=matter_id, source="upload")
     return JSONResponse(
         status_code=202,
         content={
@@ -151,9 +215,8 @@ def resolve(
         parked = next(review_dir().glob(f"{doc_id}--*"), None)
         if parked is None:
             raise HTTPException(status_code=404, detail="no parked file")
-        dest = inbox_dir() / parked.name
-        dest.write_bytes(parked.read_bytes())
-        _spawn(run_document, file_path=dest, matter_id=row["matter_id"], doc_id=str(uuid4()))
+        new_id = str(uuid4())
+        _accept_inbox(parked.read_bytes(), parked.name, doc_id=new_id, matter_id=row["matter_id"], source="requeue")
         from agent_mailroom.storage.audit import write_audit
 
         write_audit(doc_id=doc_id, matter_id=row["matter_id"], event="review_requeued", actor="human", detail={})
@@ -269,6 +332,7 @@ def floor() -> dict[str, Any]:
                 "extracted_data": row.get("extracted_data"),
                 "report": row.get("report"),
                 "updated_at": row.get("updated_at"),
+                "conflict_detected": "conflict" in (row.get("escalation_reason") or "").lower(),
             }
         )
     return {"count": len(runs), "runs": runs, "roster": agent_roster()}
@@ -395,8 +459,6 @@ def demo(body: DemoBody | None = None) -> dict[str, Any]:
     started = []
     for path in files:
         doc_id = str(uuid4())
-        dest = inbox_dir() / f"{doc_id}--{path.name}"
-        dest.write_bytes(path.read_bytes())
-        _spawn(run_document, file_path=dest, matter_id=body.matter_id, doc_id=doc_id)
+        _accept_inbox(path.read_bytes(), path.name, doc_id=doc_id, matter_id=body.matter_id, source="demo")
         started.append({"doc_id": doc_id, "file": path.name})
     return {"started": started}

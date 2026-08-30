@@ -41,6 +41,11 @@ def test_extract_high_skips_judge():
     assert nxt == "compile_report"
 
 
+def test_conflict_goes_to_boss():
+    nxt = after_extract(_state(conflict_detected=True, extraction_confidence=0.92, extraction_attempts=1))
+    assert nxt == "boss_escalation"
+
+
 def test_judge_partial_to_arbiter():
     nxt = after_judge(_state(judge_verdict="partial"))
     assert nxt == "arbiter"
