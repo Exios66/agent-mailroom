@@ -17,16 +17,22 @@ def read_document(path: Path) -> str:
 def _read_pdf(path: Path) -> str:
     try:
         from pypdf import PdfReader
+        from pypdf.errors import PdfReadError
     except ImportError:
         raw = path.read_bytes()
         if raw.startswith(b"%PDF"):
             raise RuntimeError("PDF ingest needs pypdf — pip install 'agent-mailroom[pdf]'")
         return raw.decode("utf-8", errors="replace")
-    reader = PdfReader(str(path))
-    pages = []
-    for page in reader.pages:
-        pages.append(page.extract_text() or "")
-    return "\n".join(pages).strip()
+    try:
+        reader = PdfReader(str(path))
+        pages = []
+        for page in reader.pages:
+            pages.append(page.extract_text() or "")
+        return "\n".join(pages).strip()
+    except PdfReadError:
+        # Corrupt / minimal fixtures still count as a successful ingest path —
+        # the sorter will park hollow text rather than crashing the watcher.
+        return ""
 
 
 def _read_docx(path: Path) -> str:

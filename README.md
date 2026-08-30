@@ -6,12 +6,13 @@ A self-contained legal-document mailroom: one state machine per document, specia
 
 You talk to the floor. The boss desk only bothers you when a filing actually needs a human.
 
-Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom). Floor / hive language from [munder-difflin](https://github.com/chaitanyagiri/munder-difflin) and [The-Mailroom](https://github.com/Exios66/The-Mailroom). Corpora from [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) on Hugging Face. This repo does not require those siblings at runtime.
+Pipeline contract from [llm-mailroom](https://github.com/Exios66/llm-mailroom) **v0.6.0** (happy-path classify + extract, procedural matter-record, severity-aware gates). Floor / hive language from [munder-difflin](https://github.com/chaitanyagiri/munder-difflin) and [The-Mailroom](https://github.com/Exios66/The-Mailroom). Corpora from [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) on Hugging Face. This repo does not require those siblings at runtime.
 
 ## What you get
 
-- **Core mailroom pipeline** — ingest → classify → (Lane A reviewer) → extract → (Lane B judge / arbiter) → boss → human review → report → catalog → archive
+- **Core mailroom pipeline** — ingest → classify → (Lane A reviewer) → extract → (Lane B judge / arbiter on ambiguous extractions only) → procedural matter-record → catalog → archive. Happy path is **two LLM calls**.
 - **Six live document classes** — `contract`, `merger_agreement`, `corporate_record`, `correspondence`, `compliance_filing`, `insurance_claim` (`unknown` parks on review)
+- **Pared extraction** — CUAD/MAUD/insurance checklists + semantic trio (`intent` / `subject_matter` / `keywords`); no open `key_obligations` / `termination_clauses` / `key_provisions`
 - **Inbox watcher** — txt / md / pdf / docx land in the inbox; the watcher claims each file once. Matter conflicts escalate to the boss.
 - **Hub datasets** — pull [Lucius-Morningstar](https://huggingface.co/Lucius-Morningstar) rows (`docclass-pilot`, `docclass-merged`, Enron, CMS claims, CUAD) onto the same inbox
 - **OpenRouter-first harness** — primary provider is OpenRouter; add OpenAI, Ollama, vLLM, or a generic OpenAI-compatible endpoint. Missing keys fall back to `mock`.

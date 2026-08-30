@@ -29,7 +29,10 @@ class RunState:
     conflict_detected: bool = False
     judge_verdict: str | None = None
     judge_score: float | None = None
+    judge_findings: list[str] | None = None
+    judge_pass_count: int = 0
     arbiter_decision: str | None = None
+    arbiter_reasoning: str | None = None
     arbiter_retry_count: int = 0
     resume_extraction: bool = False
     halt: bool = False
@@ -54,5 +57,8 @@ class RunState:
             "review_decision": self.review_decision,
             "routing_path": list(self.routing_path),
             "judge_verdict": self.judge_verdict,
+            "judge_score": self.judge_score,
             "arbiter_decision": self.arbiter_decision,
+            "arbiter_reasoning": self.arbiter_reasoning,
+            "arbiter_retry_count": self.arbiter_retry_count,
         }

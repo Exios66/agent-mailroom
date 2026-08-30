@@ -24,8 +24,23 @@ def taxonomy() -> dict[str, Any]:
         return yaml.safe_load(fh)
 
 
-def confidence() -> dict[str, float]:
-    return dict(taxonomy()["confidence"])
+def confidence(doc_type: str | None = None) -> dict[str, float]:
+    """Return confidence / Lane B budgets, optionally merged with per-class severity.
+
+    Global keys always present. When ``doc_type`` resolves to a ``by_class``
+    entry, that class's ``high`` / ``low`` / ``judge_band_high`` override the
+    globals. Retry budgets stay global unless a class entry sets them.
+    """
+    raw = taxonomy().get("confidence", {}) or {}
+    base = {k: v for k, v in raw.items() if k != "by_class"}
+    by_class = raw.get("by_class") or {}
+    if doc_type and isinstance(by_class, dict):
+        overrides = by_class.get(doc_type)
+        if isinstance(overrides, dict):
+            for key, value in overrides.items():
+                if value is not None:
+                    base[key] = value
+    return base
 
 
 def live_doc_types() -> list[str]:

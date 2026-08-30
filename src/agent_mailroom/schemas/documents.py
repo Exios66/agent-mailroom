@@ -6,17 +6,19 @@ from pydantic import BaseModel, Field
 
 
 class ContractExtraction(BaseModel):
+    # Pared CUAD/MAUD product (llm-mailroom v0.6.0): key entities + clause checklists.
+    # Open-ended key_obligations / termination_clauses are no longer extracted.
     document_name: str | None = None
     parties: list[str] = Field(default_factory=list)
     effective_date: str | None = None
     term_length: str | None = None
-    termination_clauses: list[str] = Field(default_factory=list)
     governing_law: str | None = None
-    key_obligations: list[str] = Field(default_factory=list)
     contract_value: str | None = None
     renewal_terms: str | None = None
     cuad_family: str | None = None
     merger_consideration: str | None = None
+    cuad_clauses: list[str] = Field(default_factory=list)
+    maud_clauses: list[str] = Field(default_factory=list)
     confidence: float = 0.0
 
 
@@ -24,10 +26,12 @@ class CorporateRecordExtraction(BaseModel):
     entity_name: str | None = None
     record_type: str | None = None
     effective_date: str | None = None
-    key_provisions: list[str] = Field(default_factory=list)
     signatories: list[str] = Field(default_factory=list)
     jurisdiction: str | None = None
     filing_number: str | None = None
+    intent: str | None = None
+    subject_matter: str | None = None
+    keywords: list[str] = Field(default_factory=list)
     confidence: float = 0.0
 
 
@@ -37,11 +41,12 @@ class CorrespondenceExtraction(BaseModel):
     additional_recipients: list[str] = Field(default_factory=list)
     communication_type: str | None = None
     communication_date: str | None = None
-    key_points: list[str] = Field(default_factory=list)
     demand_amount: str | None = None
     action_items: list[str] = Field(default_factory=list)
     urgency: str | None = None
-    referenced_communications: list[str] = Field(default_factory=list)
+    intent: str | None = None
+    subject_matter: str | None = None
+    keywords: list[str] = Field(default_factory=list)
     confidence: float = 0.0
 
 
@@ -71,6 +76,10 @@ class InsuranceClaimExtraction(BaseModel):
     coverage_determination: str | None = None
     denial_reasons: list[str] = Field(default_factory=list)
     supporting_documents: list[str] = Field(default_factory=list)
+    intent: str | None = None
+    subject_matter: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+    claim_checklist: list[str] = Field(default_factory=list)
     confidence: float = 0.0
 
 
@@ -89,7 +98,9 @@ def get_extraction_schema(doc_type: str) -> type[BaseModel]:
 
 
 def schema_has_substance(data: dict[str, Any]) -> bool:
-    for value in data.values():
+    for key, value in data.items():
+        if key in {"confidence", "reasoning"} or str(key).startswith("_"):
+            continue
         if value in (None, "", [], {}, 0, 0.0):
             continue
         if isinstance(value, str) and value.strip():

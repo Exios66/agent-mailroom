@@ -50,7 +50,7 @@ MAIL_EDGES = {
     "arbiter": ("arbiter", "propose", "Arbitration"),
     "boss_escalation": ("boss", "request", "That's what she said — escalate"),
     "human_review": ("boss", "request", "Needs a human"),
-    "compile_report": ("reporter", "inform", "Compiling the record"),
+    "compile_report": ("reporter", "inform", "Assembling the matter record"),
     "catalog_write": ("archivist", "done", "Writing the catalog"),
     "archive": ("archivist", "done", "Filing it away"),
 }
@@ -77,6 +77,12 @@ def _persist(state: RunState, *, stage: PipelineStage | None = None) -> Document
         escalation_reason=state.escalation_reason,
         review_decision=state.review_decision,
         routing_path=state.routing_path,
+        judge_verdict=state.judge_verdict,
+        judge_score=state.judge_score,
+        judge_findings=state.judge_findings,
+        arbiter_decision=state.arbiter_decision,
+        arbiter_reasoning=state.arbiter_reasoning,
+        arbiter_retry_count=state.arbiter_retry_count,
         trace_id=state.doc_id,
     )
     upsert_document(manifest)
@@ -296,7 +302,22 @@ def run_document(
         if node == "human_review":
             return park_for_review(state)
         if node == "compile_report":
-            state = _run_node(state, node, lambda: nodes.node_report(state))
+            try:
+                state = _run_node(state, node, lambda: nodes.node_report(state))
+            except Exception as exc:
+                state.escalation_reason = f"report assemble failed: {exc}"
+                return park_for_review(state)
+            _audit(
+                state,
+                "report_compiled",
+                "reporter",
+                {
+                    "procedural": True,
+                    "judge_verdict": state.judge_verdict,
+                    "arbiter_decision": state.arbiter_decision,
+                },
+            )
+            _persist(state)
             _broadcast(state, node, actor)
             node = "catalog_write" if state.report else "human_review"
             continue
@@ -342,7 +363,17 @@ def archive_document(state: RunState) -> RunState:
     state.file_path = dest
     state.stage = "archived"
     state.graph_node = "archive"
-    _audit(state, "archived", "archivist", {"path": str(dest)})
+    _audit(
+        state,
+        "archived",
+        "archivist",
+        {
+            "path": str(dest),
+            "judge_verdict": state.judge_verdict,
+            "arbiter_decision": state.arbiter_decision,
+            "arbiter_retry_count": state.arbiter_retry_count,
+        },
+    )
     _persist(state, stage=PipelineStage.ARCHIVED)
     _broadcast(state, "archive", "archivist")
     emit(

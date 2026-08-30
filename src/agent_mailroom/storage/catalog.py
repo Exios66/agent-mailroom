@@ -28,6 +28,12 @@ def upsert_document(manifest: DocumentManifest) -> None:
         manifest.review_decision,
         json.dumps(manifest.routing_path),
         manifest.trace_id,
+        manifest.judge_verdict,
+        manifest.judge_score,
+        json.dumps(manifest.judge_findings) if manifest.judge_findings is not None else None,
+        manifest.arbiter_decision,
+        manifest.arbiter_reasoning,
+        manifest.arbiter_retry_count,
         manifest.created_at.isoformat(),
         manifest.updated_at.isoformat(),
     )
@@ -36,8 +42,11 @@ def upsert_document(manifest: DocumentManifest) -> None:
             doc_id, matter_id, original_filename, stage, graph_node, doc_type,
             contract_subtype, doc_subclass, classification_confidence,
             extraction_confidence, extracted_data, report, escalation_reason,
-            review_decision, routing_path, trace_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            review_decision, routing_path, trace_id,
+            judge_verdict, judge_score, judge_findings,
+            arbiter_decision, arbiter_reasoning, arbiter_retry_count,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(doc_id) DO UPDATE SET
             matter_id=excluded.matter_id,
             original_filename=excluded.original_filename,
@@ -54,6 +63,12 @@ def upsert_document(manifest: DocumentManifest) -> None:
             review_decision=excluded.review_decision,
             routing_path=excluded.routing_path,
             trace_id=excluded.trace_id,
+            judge_verdict=excluded.judge_verdict,
+            judge_score=excluded.judge_score,
+            judge_findings=excluded.judge_findings,
+            arbiter_decision=excluded.arbiter_decision,
+            arbiter_reasoning=excluded.arbiter_reasoning,
+            arbiter_retry_count=excluded.arbiter_retry_count,
             updated_at=excluded.updated_at
     """
     with locked():
@@ -70,6 +85,11 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         data["routing_path"] = json.loads(data["routing_path"])
     else:
         data["routing_path"] = []
+    if data.get("judge_findings"):
+        try:
+            data["judge_findings"] = json.loads(data["judge_findings"])
+        except (TypeError, json.JSONDecodeError):
+            pass
     return data
 
 

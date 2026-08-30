@@ -2,7 +2,7 @@
 
 The Mailroom is a self-contained hybrid:
 
-- **Pipeline** — the llm-mailroom document state machine (classify → extract → judge → report → archive), including filesystem bins, a SQLite catalog, and a SHA-256 hash-chained audit log.
+- **Pipeline** — the llm-mailroom document state machine (classify → extract → [judge/arbiter on Lane B] → procedural matter-record → archive), including filesystem bins, a SQLite catalog, and a SHA-256 hash-chained audit log.
 - **Hive** — atomic mailboxes. Agents write JSON to `outbox/`; the router delivers to `inbox/` and the office draws a flying envelope.
 - **Office** — a walking pixel floor branded **The Mailroom**. LimeZu Modern Interiors tilesets paint the rooms when `office/tiles/` is present; the original procedural rooms are the fallback. A hardened Electron shell can wrap the same `/office/` UI the browser already uses.
 - **Harnesses** — OpenRouter is primary. OpenAI, Ollama, vLLM, generic OpenAI-compatible, and mock are registered fallbacks.
@@ -21,9 +21,13 @@ inbox bin + sidecar ──► watcher claim ──► ingest ──► sorter (P
                  └── unknown / exhausted ──► Michael's office (human review)
                                 │
                                 ▼
-                         judge (Oscar) ──► arbiter (Stanley) ──► reporter (Ryan) ──► Creed's archive
+                         [Lane B judge/arbiter only when extraction is ambiguous]
+                                │
+                                ▼
+                         procedural matter-record (Ryan desk, no LLM) ──► Creed's archive
 ```
 
+Happy-path archive is **classify + extract only** (two LLM generations), matching [llm-mailroom v0.6.0](https://github.com/Exios66/llm-mailroom/releases/tag/v0.6.0). `compile_report` assembles a deterministic matter record; the reporter LLM is retired.
 Routing thresholds live in [`src/agent_mailroom/config/taxonomy.yaml`](../src/agent_mailroom/config/taxonomy.yaml). They are not hardcoded.
 
 The office is static files under `office/` served by the same FastAPI process. Live updates go over `/ws`. The display contract (`stage`, `doc_type`, review dispositions) matches The-Mailroom / llm-mailroom so this repo can sit at the center of that constellation.

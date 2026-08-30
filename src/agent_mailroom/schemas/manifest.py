@@ -40,5 +40,11 @@ class DocumentManifest(BaseModel):
     escalation_reason: str | None = None
     review_decision: str | None = None
     routing_path: list[str] = Field(default_factory=list)
+    judge_verdict: str | None = None
+    judge_score: float | None = None
+    judge_findings: list[str] | None = None
+    arbiter_decision: str | None = None
+    arbiter_reasoning: str | None = None
+    arbiter_retry_count: int = 0
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)

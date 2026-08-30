@@ -106,12 +106,13 @@ def test_ops_recover_parks_stuck_processing(samples):
 
 
 def test_judge_toggle(monkeypatch):
+    # Global Lane B band under v0.6.0: [0.88, 0.95)
     state = RunState(
         doc_id="j1",
         matter_id="J",
         original_filename="x.txt",
         file_path=__import__("pathlib").Path("."),
-        extraction_confidence=0.78,
+        extraction_confidence=0.90,
     )
     monkeypatch.setenv("MAILROOM_JUDGE_VERIFY", "on")
     assert after_extract(state) == "judge_verify"

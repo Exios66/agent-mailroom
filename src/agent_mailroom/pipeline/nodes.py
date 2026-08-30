@@ -6,6 +6,7 @@ from agent_mailroom.pipeline.conflicts import detect_conflict
 from agent_mailroom.pipeline.guards import guard_classification, guard_extraction
 from agent_mailroom.pipeline.ingest import read_document
 from agent_mailroom.llm.vision import render_document_pages
+from agent_mailroom.pipeline.report import compile_matter_record
 from agent_mailroom.pipeline.state import RunState
 
 
@@ -62,20 +63,22 @@ def node_extract(state: RunState) -> RunState:
 
 
 def node_judge(state: RunState) -> RunState:
-    payload = "EXTRACTED_JSON\n" + str(state.extracted_data or {})
-    # Prefer a real JSON blob for the mock parser.
     import json
 
     user = "EXTRACTED_JSON\n" + json.dumps(state.extracted_data or {})
-    result = run_agent("judge", user or payload)
+    result = run_agent("judge", user)
     state.judge_verdict = result.get("verdict")
     state.judge_score = result.get("score")
+    findings = result.get("findings")
+    state.judge_findings = list(findings) if isinstance(findings, list) else None
+    state.judge_pass_count += 1
     return state
 
 
 def node_arbiter(state: RunState) -> RunState:
     result = run_agent("arbiter", f"VERDICT={state.judge_verdict}")
     state.arbiter_decision = result.get("decision")
+    state.arbiter_reasoning = result.get("reasoning")
     if state.arbiter_decision == "retry_extraction":
         state.arbiter_retry_count += 1
     return state
@@ -90,6 +93,24 @@ def node_boss(state: RunState) -> RunState:
 
 
 def node_report(state: RunState) -> RunState:
-    result = run_agent("reporter", f"DOC_TYPE={state.doc_type}\n{state.extracted_data}")
-    state.report = result.get("report") or str(result)
+    """Procedural matter-record assemble — no reporter LLM (v0.6.0)."""
+    record = compile_matter_record(
+        {
+            "doc_type": state.doc_type,
+            "contract_subtype": state.contract_subtype,
+            "doc_subclass": state.doc_subclass,
+            "extracted_data": state.extracted_data or {},
+            "classification_confidence": state.classification_confidence,
+            "extraction_confidence": state.extraction_confidence,
+            "arbiter_decision": state.arbiter_decision,
+            "arbiter_reasoning": state.arbiter_reasoning,
+            "judge_verdict": state.judge_verdict,
+            "judge_score": state.judge_score,
+        }
+    )
+    state.report = record["summary"]
+    if isinstance(state.extracted_data, dict):
+        state.extracted_data = {**state.extracted_data, "_report": record}
+    elif state.extracted_data is None:
+        state.extracted_data = {"_report": record}
     return state

@@ -1,5 +1,5 @@
 # Agent Mailroom taxonomy — config over code.
-# Mirrors the live llm-mailroom contract (5 extract classes + merger_agreement alias + unknown).
+# Aligned to llm-mailroom v0.6.0 (pared LLM load + severity-aware gates).
 
 pipeline:
   bins:
@@ -12,12 +12,43 @@ pipeline:
     manifests: "{base_dir}/manifests"
     hive: "{base_dir}/hive"
 
+# Global fallbacks (used before doc_type is known). Per-class severity overrides
+# under by_class win once classification is set — see loader.confidence().
 confidence:
-  high: 0.95
-  low: 0.70
-  retry_max: 1
-  judge_band_high: 0.85
+  high: 0.97
+  low: 0.88
+  retry_max: 2
+  # Lane B: low <= extraction_confidence < judge_band_high fires judge_verify.
+  # Clean high-confidence extractions skip (happy-path LLM count = 2).
+  judge_band_high: 0.95
+  arbiter_retry_max: 2
+  judge_max_passes: 3
   conflict_threshold: 0.3
+  by_class:
+    contract:
+      high: 0.98
+      low: 0.90
+      judge_band_high: 0.97
+    merger_agreement:
+      high: 0.98
+      low: 0.90
+      judge_band_high: 0.97
+    insurance_claim:
+      high: 0.98
+      low: 0.90
+      judge_band_high: 0.97
+    compliance_filing:
+      high: 0.97
+      low: 0.88
+      judge_band_high: 0.95
+    corporate_record:
+      high: 0.96
+      low: 0.86
+      judge_band_high: 0.94
+    correspondence:
+      high: 0.95
+      low: 0.85
+      judge_band_high: 0.92
 
 file_extensions:
   - .txt
@@ -127,12 +158,14 @@ agents:
     character: michael
     room: boss
     god: true
+  # Reporter is procedural (no LLM) as of llm-mailroom v0.6.0.
   reporter:
     label: Reporter
     role: report
     desk: desk-report
     character: ryan
     room: report
+    procedural: true
   archivist:
     label: Archivist
     role: archive
