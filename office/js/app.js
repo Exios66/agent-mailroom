@@ -71,14 +71,17 @@ document.getElementById("demo-btn").addEventListener("click", async () => {
   await postJSON("/v1/demo", { sample: "all", matter_id: "SCRANTON" });
 });
 
+document.getElementById("brief-btn").addEventListener("click", () => switchTab("topics"));
+
 document.getElementById("topic-form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
+  const action = ev.submitter?.dataset.action || "launch";
   const subject = document.getElementById("topic-subject").value.trim();
   const body = document.getElementById("topic-body").value;
   const matterId = document.getElementById("topic-matter").value || "DEFAULT";
   const routeTo = document.getElementById("topic-route").value;
   if (!subject) return;
-  await postJSON("/v1/topics", { subject, body, matter_id: matterId, route_to: routeTo });
+  await postJSON("/v1/topics", { subject, body, matter_id: matterId, route_to: routeTo, action });
   document.getElementById("topic-subject").value = "";
   document.getElementById("topic-body").value = "";
   refresh();
@@ -149,17 +152,37 @@ function renderHive(data) {
 function renderTopics(topics) {
   const list = document.getElementById("topic-list");
   if (!topics.length) {
-    list.innerHTML = `<p class="muted">No live topics yet. Brief Michael and the floor will move.</p>`;
+    list.innerHTML = `<p class="muted">No topics yet. Queue a brief for later or launch it onto a desk.</p>`;
     return;
   }
-  list.innerHTML = topics.map((topic) => `
+  list.innerHTML = topics.map((topic) => {
+    const actions = topic.status === "queued"
+      ? `<div class="row"><button data-launch="${topic.topic_id}">Launch</button></div>`
+      : topic.status === "done"
+        ? ""
+        : `<div class="row"><button data-complete="${topic.topic_id}">Mark done</button></div>`;
+    return `
     <div class="card">
       <h3>${escapeHtml(topic.subject)}</h3>
       <span class="chip review">${escapeHtml(topic.status)}</span>
       <span class="chip">${escapeHtml(topic.route_to)}</span>
-      <p class="muted">${escapeHtml(topic.matter_id)} · ${escapeHtml(topic.topic_id)}</p>
+      <p class="muted">${escapeHtml(topic.matter_id)}</p>
       ${topic.body ? `<p>${escapeHtml(topic.body).slice(0, 280)}</p>` : ""}
-    </div>`).join("");
+      ${actions}
+    </div>`;
+  }).join("");
+  list.querySelectorAll("[data-launch]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await postJSON(`/v1/topics/${btn.dataset.launch}/launch`, {});
+      refresh();
+    });
+  });
+  list.querySelectorAll("[data-complete]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await postJSON(`/v1/topics/${btn.dataset.complete}/complete`, {});
+      refresh();
+    });
+  });
 }
 
 function renderMetrics(runs, health) {
@@ -187,6 +210,9 @@ async function refresh() {
     renderHive(hive);
     renderTopics(topics.topics || []);
     renderMetrics(floorData.runs || [], health);
+    const queued = topics.queued || 0;
+    const live = topics.live || 0;
+    counts.textContent = `${floorData.runs?.length || 0} docs · ${live} live topics · ${queued} queued`;
   } catch (err) {
     appendLog({ type: "error", subject: String(err) });
   }

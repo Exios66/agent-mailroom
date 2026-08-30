@@ -15,7 +15,13 @@ from agent_mailroom.hive.mailbox import list_inbox, roster_status
 from agent_mailroom.pipeline.bins import inbox_dir, review_dir
 from agent_mailroom.pipeline.events import recent
 from agent_mailroom.pipeline.runner import fail_document, resume_from_review, run_document
-from agent_mailroom.pipeline.topics import launch_topic, office_topics
+from agent_mailroom.pipeline.topics import (
+    complete_topic,
+    launch_queued_topic,
+    launch_topic,
+    office_topics,
+    queue_topic,
+)
 from agent_mailroom.pipeline.state import RunState
 from agent_mailroom.storage.audit import list_audit, verify_chain
 from agent_mailroom.storage.catalog import get_document, list_documents, list_matters, list_review_queue
@@ -296,29 +302,79 @@ class TopicBody(BaseModel):
     matter_id: str = "DEFAULT"
     route_to: str = "boss"
     ingest: bool | None = None
+    action: str = "launch"  # launch | queue
+
+
+class TopicDispatchBody(BaseModel):
+    ingest: bool | None = None
 
 
 @router.get("/topics")
 def topics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
     rows = office_topics()
-    return {"count": len(rows), "topics": rows}
+    queued = [row for row in rows if row["status"] == "queued"]
+    live = [row for row in rows if row["status"] in {"assigned", "in_progress"}]
+    return {
+        "count": len(rows),
+        "queued": len(queued),
+        "live": len(live),
+        "topics": rows,
+    }
 
 
 @router.post("/topics")
 def create_topic(body: TopicBody, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
+    action = (body.action or "launch").lower()
+    if action not in {"launch", "queue"}:
+        raise HTTPException(status_code=400, detail="action must be launch or queue")
     try:
-        topic = launch_topic(
-            subject=body.subject,
-            body=body.body,
-            matter_id=body.matter_id,
-            route_to=body.route_to,
-            ingest=body.ingest,
-        )
+        if action == "queue":
+            topic = queue_topic(
+                subject=body.subject,
+                body=body.body,
+                matter_id=body.matter_id,
+                route_to=body.route_to,
+            )
+        else:
+            topic = launch_topic(
+                subject=body.subject,
+                body=body.body,
+                matter_id=body.matter_id,
+                route_to=body.route_to,
+                ingest=body.ingest,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "queued", "topic": topic}
+    return {"status": topic["status"], "action": action, "topic": topic}
+
+
+@router.post("/topics/{topic_id}/launch")
+def launch_existing_topic(
+    topic_id: str,
+    body: TopicDispatchBody | None = None,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    _auth(authorization)
+    body = body or TopicDispatchBody()
+    try:
+        topic = launch_queued_topic(topic_id, ingest=body.ingest)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="unknown topic") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": topic["status"], "action": "launch", "topic": topic}
+
+
+@router.post("/topics/{topic_id}/complete")
+def finish_topic(topic_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    try:
+        topic = complete_topic(topic_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="unknown topic") from exc
+    return {"status": "done", "topic": topic}
 
 
 class DemoBody(BaseModel):

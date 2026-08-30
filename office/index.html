@@ -21,6 +21,7 @@
       <button data-tab="metrics">Metrics</button>
       <button data-tab="console">Console</button>
     </nav>
+    <button class="action" id="brief-btn">Brief floor</button>
     <button class="action primary" id="demo-btn">Drop a pile</button>
     <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
       Upload
@@ -43,7 +44,7 @@
         <section class="view" id="view-topics">
           <form id="topic-form" class="card">
             <h3>Brief the floor</h3>
-            <p class="muted">Michael gets the envelope. Long briefs that look like filings also enter the pipeline.</p>
+            <p class="muted"><b>Queue</b> parks the brief. <b>Launch now</b> delivers an envelope to the desk. Filing-like briefs also enter the pipeline.</p>
             <label>Subject <input id="topic-subject" name="subject" required placeholder="Northwind unpaid invoices"></label>
             <label>Matter <input id="topic-matter" name="matter_id" value="SCRANTON"></label>
             <label>Route
@@ -56,7 +57,8 @@
             </label>
             <label>Brief <textarea id="topic-body" name="body" rows="6" placeholder="What should the office address?"></textarea></label>
             <div class="row">
-              <button type="submit" class="action primary">Launch topic</button>
+              <button type="submit" data-action="queue">Queue</button>
+              <button type="submit" class="action primary" data-action="launch">Launch now</button>
             </div>
           </form>
           <div id="topic-list"></div>

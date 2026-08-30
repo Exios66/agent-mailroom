@@ -20,12 +20,14 @@ def _agent_dir(agent: str) -> Path:
 
 def seed_hive() -> None:
     hive = hive_dir()
-    (hive / "PROTOCOL.md").write_text(
-        "# Hive protocol\n\n"
-        "Write one JSON message to your outbox. The router delivers it to the recipient inbox.\n"
-        "Speech acts: request, inform, propose, query, agree, refuse, done.\n",
-        encoding="utf-8",
-    )
+    protocol = hive / "PROTOCOL.md"
+    if not protocol.exists():
+        protocol.write_text(
+            "# Hive protocol\n\n"
+            "Write one JSON message to your outbox. The router delivers it to the recipient inbox.\n"
+            "Speech acts: request, inform, propose, query, agree, refuse, done.\n",
+            encoding="utf-8",
+        )
     registry = {
         name: {
             "role": meta["role"],
@@ -36,7 +38,9 @@ def seed_hive() -> None:
         for name, meta in agent_roster().items()
     }
     (hive / "registry.json").write_text(json.dumps(registry, indent=2), encoding="utf-8")
-    (hive / "board.md").write_text("# Blackboard\n\nShared matter notes live here.\n", encoding="utf-8")
+    board = hive / "board.md"
+    if not board.exists():
+        board.write_text("# Blackboard\n\nShared matter notes live here.\n", encoding="utf-8")
     for name in agent_roster():
         folder = _agent_dir(name)
         identity = folder / "identity.md"

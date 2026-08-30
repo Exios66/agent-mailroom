@@ -26,7 +26,7 @@ cp .env.example .env
 python -m agent_mailroom
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Click **Drop a pile** to send the HarborPoint fixtures across the floor. Use the **Topics** tab to brief Michael — a live subject becomes a hive envelope to his desk, and a long filing-like brief also enters the pipeline.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Click **Drop a pile** to send the HarborPoint fixtures across the floor. Use **Topics** (or **Brief floor**) to give the office work: **Queue** parks a brief; **Launch now** delivers an envelope to Michael (or another desk). Filing-like briefs also enter the pipeline.
 
 ```bash
 # or enqueue one file
@@ -56,8 +56,10 @@ Same producer shape as llm-mailroom. Prefer `/v1`.
 |---|---|---|
 | `GET` | `/v1/health` | Liveness + provider lamp |
 | `POST` | `/v1/upload` | Queue a document (202) |
-| `POST` | `/v1/topics` | Launch a live topic for the office (hive + optional ingest) |
-| `GET` | `/v1/topics` | Queued / assigned / in-progress briefs |
+| `POST` | `/v1/topics` | `action=queue` parks a brief; `action=launch` delivers it to a desk |
+| `POST` | `/v1/topics/{id}/launch` | Dispatch a queued topic onto the floor |
+| `POST` | `/v1/topics/{id}/complete` | Mark a live topic done |
+| `GET` | `/v1/topics` | Queue + live + done briefs |
 | `POST` | `/v1/demo` | Drop fixture samples on the floor |
 | `GET` | `/v1/status/{doc_id}` | Catalog row |
 | `GET` | `/v1/audit/{doc_id}` | Hash-chained trail + validity |
