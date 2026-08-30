@@ -1,0 +1,145 @@
+# Agent Mailroom taxonomy — config over code.
+# Mirrors the live llm-mailroom contract (5 extract classes + merger_agreement alias + unknown).
+
+pipeline:
+  bins:
+    inbox: "{base_dir}/pipeline/inbox"
+    processing: "{base_dir}/pipeline/processing"
+    classified: "{base_dir}/pipeline/classified"
+    review: "{base_dir}/pipeline/review"
+    failed: "{base_dir}/pipeline/failed"
+    archive: "{base_dir}/archive"
+    manifests: "{base_dir}/manifests"
+    hive: "{base_dir}/hive"
+
+confidence:
+  high: 0.95
+  low: 0.70
+  retry_max: 1
+  judge_band_high: 0.85
+  conflict_threshold: 0.3
+
+file_extensions:
+  - .txt
+  - .md
+  - .pdf
+  - .docx
+
+doc_classes:
+  - key: contract
+    label: Contract
+    schema: ContractExtraction
+    specialist: contracts_specialist
+    stamp: "#7d97b5"
+  - key: merger_agreement
+    label: Merger Agreement
+    schema: ContractExtraction
+    specialist: contracts_specialist
+    stamp: "#8aa3c0"
+  - key: corporate_record
+    label: Corporate Record
+    schema: CorporateRecordExtraction
+    specialist: corporate_records_specialist
+    stamp: "#659099"
+  - key: correspondence
+    label: Correspondence
+    schema: CorrespondenceExtraction
+    specialist: correspondence_specialist
+    stamp: "#e8b478"
+  - key: compliance_filing
+    label: Compliance Filing
+    schema: ComplianceFilingExtraction
+    specialist: compliance_specialist
+    stamp: "#7a8fb0"
+  - key: insurance_claim
+    label: Insurance Claim
+    schema: InsuranceClaimExtraction
+    specialist: insurance_claims_specialist
+    stamp: "#b18ec2"
+
+# Office-floor roster. character ids are original procedural sprites
+# inspired by a paper-company sitcom cast (parody, not NBC assets).
+agents:
+  sorter:
+    label: Sorter
+    role: classify
+    desk: desk-reception
+    character: pam
+    room: reception
+  sorter_reviewer:
+    label: Sorter Reviewer
+    role: review-classify
+    desk: desk-reception-2
+    character: kelly
+    room: reception
+  contracts_specialist:
+    label: Contracts
+    role: extract
+    desk: desk-contracts
+    character: dwight
+    room: bay-a
+  corporate_records_specialist:
+    label: Corporate Records
+    role: extract
+    desk: desk-corporate
+    character: angela
+    room: bay-a
+  correspondence_specialist:
+    label: Correspondence
+    role: extract
+    desk: desk-correspondence
+    character: jim
+    room: bay-b
+  compliance_specialist:
+    label: Compliance
+    role: extract
+    desk: desk-compliance
+    character: toby
+    room: bay-b
+  insurance_claims_specialist:
+    label: Insurance Claims
+    role: extract
+    desk: desk-claims
+    character: meredith
+    room: bay-b
+  judge:
+    label: Judge
+    role: evaluate
+    desk: desk-judge
+    character: oscar
+    room: judge
+  arbiter:
+    label: Arbiter
+    role: adjudicate
+    desk: desk-arbiter
+    character: stanley
+    room: judge
+  boss:
+    label: Boss
+    role: adjudicate
+    desk: desk-boss
+    character: michael
+    room: boss
+    god: true
+  reporter:
+    label: Reporter
+    role: report
+    desk: desk-report
+    character: ryan
+    room: report
+  archivist:
+    label: Archivist
+    role: archive
+    desk: desk-archive
+    character: creed
+    room: archive
+
+# Speech-act colors for flying envelopes (Munder-style).
+hive_acts:
+  request: "#4F9FAF"
+  query: "#9482D3"
+  propose: "#DCAB3C"
+  inform: "#FFF8E7"
+  agree: "#5CA97A"
+  done: "#5CA97A"
+  refuse: "#D96A62"

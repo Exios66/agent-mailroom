@@ -1,0 +1,28 @@
+MASTER SERVICES AGREEMENT
+
+This Master Services Agreement (the "Agreement") is entered into as of June 1, 2024
+by and between HarborPoint Holdings, Inc., a Delaware corporation ("Client"), and
+Northwind Logistics Corporation, a Wisconsin corporation ("Provider").
+
+NOW, THEREFORE, in consideration of the mutual covenants herein, the parties agree:
+
+1. Services. Provider shall perform logistics and warehousing services described in
+each statement of work.
+
+2. Fees. Client shall pay invoices within thirty (30) days of receipt.
+
+3. Term. The initial term is twenty-four (24) months and renews annually unless
+either party gives sixty (60) days' written notice.
+
+4. Termination. Either party may terminate for material breach that remains uncured
+for thirty (30) days after written notice.
+
+5. Governing Law. This Agreement is governed by the laws of the State of Delaware.
+
+IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written.
+
+/s/ Amelia Rodriguez
+HarborPoint Holdings, Inc.
+
+/s/ Cole Bennett
+Northwind Logistics Corporation
