@@ -33,7 +33,10 @@ def upsert_document(manifest: DocumentManifest) -> None:
         json.dumps(manifest.judge_findings) if manifest.judge_findings is not None else None,
         manifest.arbiter_decision,
         manifest.arbiter_reasoning,
+        manifest.arbiter_handoff,
+        json.dumps(manifest.arbiter_fields_to_fix) if manifest.arbiter_fields_to_fix is not None else None,
         manifest.arbiter_retry_count,
+        manifest.failure_class,
         manifest.created_at.isoformat(),
         manifest.updated_at.isoformat(),
     )
@@ -44,9 +47,10 @@ def upsert_document(manifest: DocumentManifest) -> None:
             extraction_confidence, extracted_data, report, escalation_reason,
             review_decision, routing_path, trace_id,
             judge_verdict, judge_score, judge_findings,
-            arbiter_decision, arbiter_reasoning, arbiter_retry_count,
+            arbiter_decision, arbiter_reasoning, arbiter_handoff, arbiter_fields_to_fix,
+            arbiter_retry_count, failure_class,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(doc_id) DO UPDATE SET
             matter_id=excluded.matter_id,
             original_filename=excluded.original_filename,
@@ -68,7 +72,10 @@ def upsert_document(manifest: DocumentManifest) -> None:
             judge_findings=excluded.judge_findings,
             arbiter_decision=excluded.arbiter_decision,
             arbiter_reasoning=excluded.arbiter_reasoning,
+            arbiter_handoff=excluded.arbiter_handoff,
+            arbiter_fields_to_fix=excluded.arbiter_fields_to_fix,
             arbiter_retry_count=excluded.arbiter_retry_count,
+            failure_class=excluded.failure_class,
             updated_at=excluded.updated_at
     """
     with locked():
@@ -88,6 +95,11 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     if data.get("judge_findings"):
         try:
             data["judge_findings"] = json.loads(data["judge_findings"])
+        except (TypeError, json.JSONDecodeError):
+            pass
+    if data.get("arbiter_fields_to_fix"):
+        try:
+            data["arbiter_fields_to_fix"] = json.loads(data["arbiter_fields_to_fix"])
         except (TypeError, json.JSONDecodeError):
             pass
     return data

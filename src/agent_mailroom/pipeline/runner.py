@@ -19,10 +19,25 @@ from agent_mailroom.pipeline.bins import (
 )
 from agent_mailroom.observability.tracing import span_context
 from agent_mailroom.pipeline.events import emit
+from agent_mailroom.pipeline.failures import (
+    ABORT_CLASSES,
+    aborted_escalation,
+    classify_run_failure,
+)
 from agent_mailroom.pipeline.state import RunState
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 from agent_mailroom.storage.audit import write_audit
 from agent_mailroom.storage.catalog import touch_matter, upsert_document
+
+
+def _abort_or_park(state: RunState, exc: BaseException, soft_prefix: str) -> RunState:
+    """Hard LLM/I/O aborts → failed bin with failure_class; soft errors → review."""
+    classified = classify_run_failure(exc)
+    fc = classified["failure_class"]
+    if fc in ABORT_CLASSES - {"schema_error"}:
+        return fail_document(state, aborted_escalation(classified), failure_class=fc)
+    state.escalation_reason = f"{soft_prefix}: {exc}"
+    return park_for_review(state)
 
 STAGE_FOR_NODE = {
     "ingest": "ingest",
@@ -82,7 +97,10 @@ def _persist(state: RunState, *, stage: PipelineStage | None = None) -> Document
         judge_findings=state.judge_findings,
         arbiter_decision=state.arbiter_decision,
         arbiter_reasoning=state.arbiter_reasoning,
+        arbiter_handoff=state.arbiter_handoff,
+        arbiter_fields_to_fix=state.arbiter_fields_to_fix,
         arbiter_retry_count=state.arbiter_retry_count,
+        failure_class=state.failure_class,
         trace_id=state.doc_id,
     )
     upsert_document(manifest)
@@ -224,7 +242,12 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_ingest(state))
             except Exception as exc:
-                return fail_document(state, f"ingest failed: {exc}")
+                classified = classify_run_failure(exc)
+                return fail_document(
+                    state,
+                    aborted_escalation(classified),
+                    failure_class=classified["failure_class"],
+                )
             _broadcast(state, node, actor)
             node = "classify"
             continue
@@ -232,9 +255,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_classify(state, reviewer=False))
             except Exception as exc:
-                state.escalation_reason = f"classify failed: {exc}"
-                state.doc_type = state.doc_type or "unknown"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "classify failed")
             _audit(state, "classified", "sorter", {"doc_type": state.doc_type, "confidence": state.classification_confidence})
             try:
                 copy_classified(
@@ -253,8 +274,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_classify(state, reviewer=True))
             except Exception as exc:
-                state.escalation_reason = f"review-classify failed: {exc}"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "review-classify failed")
             _broadcast(state, node, actor)
             node = routing.after_review_classify(state)
             continue
@@ -262,8 +282,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_extract(state))
             except Exception as exc:
-                state.escalation_reason = f"extract failed: {exc}"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "extract failed")
             _audit(state, "extracted", specialist_for(state.doc_type or "contract"), {"confidence": state.extraction_confidence})
             if state.conflict_detected:
                 _audit(state, "conflict_detected", "boss", {"reason": state.escalation_reason})
@@ -275,8 +294,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_judge(state))
             except Exception as exc:
-                state.escalation_reason = f"judge failed: {exc}"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "judge failed")
             _broadcast(state, node, actor)
             node = routing.after_judge(state)
             continue
@@ -284,8 +302,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_arbiter(state))
             except Exception as exc:
-                state.escalation_reason = f"arbiter failed: {exc}"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "arbiter failed")
             _broadcast(state, node, actor)
             node = routing.after_arbiter(state)
             continue
@@ -293,8 +310,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_boss(state))
             except Exception as exc:
-                state.escalation_reason = f"boss failed: {exc}"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "boss failed")
             _audit(state, "boss_adjudicated", "boss", {"decision": state.review_decision})
             _broadcast(state, node, actor)
             node = routing.after_boss(state)
@@ -305,8 +321,7 @@ def run_document(
             try:
                 state = _run_node(state, node, lambda: nodes.node_report(state))
             except Exception as exc:
-                state.escalation_reason = f"report assemble failed: {exc}"
-                return park_for_review(state)
+                return _abort_or_park(state, exc, "report assemble failed")
             _audit(
                 state,
                 "report_compiled",
@@ -315,6 +330,7 @@ def run_document(
                     "procedural": True,
                     "judge_verdict": state.judge_verdict,
                     "arbiter_decision": state.arbiter_decision,
+                    "arbiter_handoff": state.arbiter_handoff,
                 },
             )
             _persist(state)
@@ -371,6 +387,9 @@ def archive_document(state: RunState) -> RunState:
             "path": str(dest),
             "judge_verdict": state.judge_verdict,
             "arbiter_decision": state.arbiter_decision,
+            "arbiter_reasoning": state.arbiter_reasoning,
+            "arbiter_handoff": state.arbiter_handoff,
+            "arbiter_fields_to_fix": state.arbiter_fields_to_fix,
             "arbiter_retry_count": state.arbiter_retry_count,
         },
     )
@@ -397,12 +416,26 @@ def archive_document(state: RunState) -> RunState:
     return state
 
 
-def fail_document(state: RunState, reason: str) -> RunState:
+def fail_document(state: RunState, reason: str, *, failure_class: str | None = None) -> RunState:
     dest = move_file(state.file_path, failed_dir(), f"{state.doc_id}--{state.original_filename}")
     state.file_path = dest
     state.stage = "failed"
     state.escalation_reason = reason
-    _audit(state, "review_rejected", "human", {"reason": reason})
+    if failure_class:
+        state.failure_class = failure_class
+    elif reason.startswith("run aborted [") and "]" in reason:
+        state.failure_class = reason.split("run aborted [", 1)[1].split("]", 1)[0]
+    detail = {"reason": reason}
+    if state.failure_class:
+        detail["failure_class"] = state.failure_class
+    detail.update(
+        {
+            "judge_verdict": state.judge_verdict,
+            "arbiter_decision": state.arbiter_decision,
+            "arbiter_handoff": state.arbiter_handoff,
+        }
+    )
+    _audit(state, "review_rejected" if not state.failure_class else "run_aborted", "human" if not state.failure_class else "system", detail)
     _persist(state, stage=PipelineStage.FAILED)
     emit(
         {
@@ -410,9 +443,10 @@ def fail_document(state: RunState, reason: str) -> RunState:
             "doc_id": state.doc_id,
             "filename": state.original_filename,
             "stage": "failed",
-            "actor": "human",
+            "actor": "system" if state.failure_class else "human",
             "needs_human": False,
             "escalation_reason": reason,
+            "failure_class": state.failure_class,
             "routing_path": list(state.routing_path),
         }
     )

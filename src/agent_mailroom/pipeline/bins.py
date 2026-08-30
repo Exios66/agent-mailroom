@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -222,3 +223,34 @@ def move_file(src: Path, dest_dir: Path, name: str | None = None) -> Path:
         dest = dest_dir / f"{dest.stem}--{src.stat().st_mtime_ns}{dest.suffix}"
     shutil.move(str(src), str(dest))
     return dest
+
+
+def _same_file_bytes(left: Path, right: Path) -> bool:
+    try:
+        if left.stat().st_size != right.stat().st_size:
+            return False
+        return hashlib.sha256(left.read_bytes()).digest() == hashlib.sha256(right.read_bytes()).digest()
+    except OSError:
+        return False
+
+
+def requeue_stale_processing(file_path: Path) -> Path:
+    """Move a stale processing claim back to the inbox (llm-mailroom v0.6.0).
+
+    Idempotent: if the inbox already has the same bytes, drop the processing
+    copy instead of double-queuing. A different file at the same name gets a
+    ``--stale`` suffix so the original inbox document is not overwritten.
+    """
+    inbox = inbox_dir()
+    dest = inbox / file_path.name
+    if dest.exists():
+        if _same_file_bytes(file_path, dest):
+            file_path.unlink(missing_ok=True)
+            return dest
+        stem, suffix = file_path.stem, file_path.suffix
+        dest = inbox / f"{stem}--stale{suffix}"
+        counter = 2
+        while dest.exists():
+            dest = inbox / f"{stem}--stale{counter}{suffix}"
+            counter += 1
+    return move_file(file_path, inbox, dest.name)

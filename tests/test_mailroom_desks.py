@@ -73,17 +73,35 @@ def test_review_record_and_complete(samples):
     assert row["doc_subclass"] == "memo"
     source = client.get(f"/v1/documents/{state.doc_id}/source").json()
     assert "text" in source
+    assert source.get("readable") is True
+    dl = client.get(f"/v1/documents/{state.doc_id}/source", params={"download": "1"})
+    assert dl.status_code == 200
+    assert dl.content
     done = client.post(
         f"/v1/review/{state.doc_id}/resolve",
-        json={"decision": "approved", "disposition": "complete", "doc_type": "correspondence"},
+        json={
+            "decision": "approved",
+            "disposition": "complete",
+            "doc_type": "correspondence",
+            "extracted_data": {
+                "sender": "Counsel",
+                "recipient": "Client",
+                "communication_type": "memo",
+                "intent": "clarification",
+                "subject_matter": "ambiguous filing",
+                "keywords": ["memo"],
+                "confidence": 0.95,
+            },
+        },
     )
+    assert done.status_code == 200
     assert done.json()["status"] == "archived"
 
 
-def test_ops_recover_parks_stuck_processing(samples):
+def test_ops_recover_requeues_stuck_processing(samples):
     import shutil
 
-    from agent_mailroom.pipeline.bins import processing_dir
+    from agent_mailroom.pipeline.bins import inbox_dir, processing_dir
 
     state = run_document(samples / "harborpoint_msa.txt", matter_id="STUCK-1")
     loc = locate_document(state.doc_id)
@@ -102,7 +120,8 @@ def test_ops_recover_parks_stuck_processing(samples):
 
     recovered = recover_stuck(minutes=15)
     assert any(item["doc_id"] == state.doc_id for item in recovered)
-    assert get_document(state.doc_id)["stage"] == "review"
+    assert get_document(state.doc_id)["stage"] == "inbox"
+    assert any(path.name.startswith(state.doc_id) for path in inbox_dir().iterdir() if path.is_file())
 
 
 def test_judge_toggle(monkeypatch):
@@ -126,7 +145,7 @@ def test_failed_classified_search_and_floor_trays(samples):
     assert parked.stage == "review"
     rejected = client.post(
         f"/v1/review/{parked.doc_id}/resolve",
-        json={"decision": "rejected", "disposition": "complete", "notes": "nope"},
+        json={"decision": "rejected", "disposition": "resume", "notes": "nope"},
     )
     assert rejected.json()["status"] == "failed"
     failed = client.get("/v1/failed").json()

@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_mailroom.api.present import document_view, floor_bins, floor_run, read_source_text
@@ -30,6 +30,7 @@ from agent_mailroom.pipeline.bins import (
 )
 from agent_mailroom.pipeline.events import recent
 from agent_mailroom.pipeline.reconsider import enrich_row
+from agent_mailroom.pipeline.review_resolve import resolve_complete_extracted, validate_operator_extraction
 from agent_mailroom.pipeline.runner import fail_document, resume_from_review
 from agent_mailroom.pipeline.routing import judge_enabled
 from agent_mailroom.pipeline.watcher import scan_inbox, status as watcher_status, watcher_lamp
@@ -55,6 +56,25 @@ from agent_mailroom.storage.catalog import (
 router = APIRouter()
 
 
+def _csv_tokens(raw: str | None) -> set[str]:
+    return {part.strip() for part in (raw or "").split(",") if part.strip()}
+
+
+def active_api_tokens() -> set[str]:
+    """Live bearer tokens: ``MAILROOM_API_TOKEN`` plus ``MAILROOM_API_TOKENS``.
+
+    ``MAILROOM_API_TOKEN_REVOKED`` is subtracted so a rotated key can be
+    invalidated without a second process. Empty set = unauthenticated local mode.
+    """
+    tokens = set()
+    primary = os.environ.get("MAILROOM_API_TOKEN", "").strip()
+    if primary:
+        tokens.add(primary)
+    tokens |= _csv_tokens(os.environ.get("MAILROOM_API_TOKENS", ""))
+    tokens -= _csv_tokens(os.environ.get("MAILROOM_API_TOKEN_REVOKED", ""))
+    return tokens
+
+
 def _spawn(fn, **kwargs) -> None:
     if os.environ.get("MAILROOM_SYNC") == "1":
         fn(**kwargs)
@@ -63,11 +83,18 @@ def _spawn(fn, **kwargs) -> None:
 
 
 def _auth(authorization: str | None) -> None:
-    token = os.environ.get("MAILROOM_API_TOKEN", "").strip()
-    if not token:
+    tokens = active_api_tokens()
+    if not tokens:
         return
-    if not authorization or authorization != f"Bearer {token}":
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="invalid token")
+    presented = authorization[len("Bearer ") :].strip()
+    if presented not in tokens:
+        raise HTTPException(status_code=401, detail="invalid token")
+
+
+def _auth_required() -> bool:
+    return bool(active_api_tokens())
 
 
 def _accept_inbox(raw: bytes, filename: str, *, doc_id: str, matter_id: str, source: str) -> list[str]:
@@ -110,7 +137,7 @@ def health() -> dict[str, Any]:
             "tilesets": tileset_status(),
             "desktop": os.environ.get("MAILROOM_DESKTOP") == "1",
             "judge_verify": judge_enabled(),
-            "auth_required": bool(os.environ.get("MAILROOM_API_TOKEN", "").strip()),
+            "auth_required": _auth_required(),
             "operator_auth": os.environ.get("MAILROOM_OPERATOR_AUTH", "0").strip().lower() in ("1", "true", "on", "yes"),
             "observability": flush_health(),
         },
@@ -291,7 +318,10 @@ def resolve(
         write_audit(doc_id=doc_id, matter_id=row["matter_id"], event="review_requeued", actor="human", detail={})
         return {"status": "requeued", "doc_id": doc_id}
 
-    if decision == "rejected" or disposition == "complete" and decision == "rejected":
+    if disposition == "complete" and decision != "approved":
+        raise HTTPException(status_code=400, detail="disposition=complete requires decision=approved")
+
+    if decision == "rejected":
         parked = next(review_dir().glob(f"{doc_id}--*"), None)
         if parked is None:
             raise HTTPException(status_code=404, detail="no parked file")
@@ -301,6 +331,10 @@ def resolve(
             original_filename=row["original_filename"],
             file_path=parked,
             routing_path=list(row.get("routing_path") or []),
+            judge_verdict=row.get("judge_verdict"),
+            arbiter_decision=row.get("arbiter_decision"),
+            arbiter_reasoning=row.get("arbiter_reasoning"),
+            arbiter_handoff=row.get("arbiter_handoff"),
         )
         fail_document(state, body.notes or "rejected")
         return {"status": "failed", "doc_id": doc_id}
@@ -311,16 +345,35 @@ def resolve(
         parked = next(review_dir().glob(f"{doc_id}--*"), None)
         if parked is None:
             raise HTTPException(status_code=404, detail="no parked file")
+        doc_type = override or row.get("doc_type")
+        try:
+            extracted = resolve_complete_extracted(body.extracted_data, row.get("extracted_data"))
+            extracted = validate_operator_extraction(doc_type or "", extracted)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        conf = extracted.get("confidence")
+        try:
+            extraction_confidence = float(conf) if conf is not None else 1.0
+        except (TypeError, ValueError):
+            extraction_confidence = 1.0
         state = RunState(
             doc_id=doc_id,
             matter_id=row["matter_id"],
             original_filename=row["original_filename"],
             file_path=parked,
-            doc_type=override or row.get("doc_type"),
+            doc_type=doc_type,
             doc_subclass=body.doc_subclass or row.get("doc_subclass"),
-            extracted_data=body.extracted_data or row.get("extracted_data"),
+            extracted_data=extracted,
+            extraction_confidence=extraction_confidence,
+            classification_confidence=row.get("classification_confidence"),
             routing_path=list(row.get("routing_path") or []),
             report=row.get("report") or "Completed at review desk.",
+            judge_verdict=row.get("judge_verdict"),
+            judge_score=row.get("judge_score"),
+            arbiter_decision=row.get("arbiter_decision"),
+            arbiter_reasoning=row.get("arbiter_reasoning"),
+            arbiter_handoff=row.get("arbiter_handoff"),
+            review_decision="approved",
         )
         archive_document(state)
         return {"status": "archived", "doc_id": doc_id}
@@ -385,17 +438,37 @@ def search(q: str = "", authorization: str | None = Header(default=None)) -> dic
 
 
 @router.get("/documents/{doc_id}/source")
-def source(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def source(
+    doc_id: str,
+    download: bool = False,
+    authorization: str | None = Header(default=None),
+):
     _auth(authorization)
     loc = locate_document(doc_id)
     path = loc.get("path")
     if path is None:
         raise HTTPException(status_code=404, detail="source not on disk")
+    if download:
+        return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+    text = read_source_text(path, limit=200_000)
+    truncated = False
+    try:
+        size = path.stat().st_size
+    except OSError:
+        size = 0
+    raw_preview = path.read_bytes()[:200_001].decode("utf-8", errors="replace")
+    if len(raw_preview) > 200_000:
+        truncated = True
     return {
+        "status": "ok",
         "doc_id": doc_id,
         "filename": path.name,
         "bin": loc.get("bin"),
-        "text": read_source_text(path),
+        "content_type": "text/plain; charset=utf-8",
+        "text": text,
+        "truncated": truncated,
+        "bytes": size,
+        "readable": bool(text.strip()),
     }
 
 
@@ -562,7 +635,7 @@ def meta() -> dict[str, Any]:
         "trays": ["inbox", "classified", "review", "archive", "failed"],
         "agents": agent_roster(),
         "dispositions": ["resume", "record", "requeue", "complete"],
-        "auth_required": bool(os.environ.get("MAILROOM_API_TOKEN", "").strip()),
+        "auth_required": _auth_required(),
         "operator_auth": os.environ.get("MAILROOM_OPERATOR_AUTH", "0").strip().lower() in ("1", "true", "on", "yes"),
         "judge_verify": judge_enabled(),
         "observability_provider": resolve_provider_name(),

@@ -79,6 +79,13 @@ def node_arbiter(state: RunState) -> RunState:
     result = run_agent("arbiter", f"VERDICT={state.judge_verdict}")
     state.arbiter_decision = result.get("decision")
     state.arbiter_reasoning = result.get("reasoning")
+    handoff = result.get("handoff_summary") or result.get("handoff")
+    state.arbiter_handoff = str(handoff) if handoff else None
+    fields = result.get("fields_to_fix")
+    if isinstance(fields, list):
+        state.arbiter_fields_to_fix = [str(item) for item in fields]
+    elif isinstance(fields, str) and fields.strip():
+        state.arbiter_fields_to_fix = [fields.strip()]
     if state.arbiter_decision == "retry_extraction":
         state.arbiter_retry_count += 1
     return state
@@ -104,6 +111,7 @@ def node_report(state: RunState) -> RunState:
             "extraction_confidence": state.extraction_confidence,
             "arbiter_decision": state.arbiter_decision,
             "arbiter_reasoning": state.arbiter_reasoning,
+            "arbiter_handoff": state.arbiter_handoff,
             "judge_verdict": state.judge_verdict,
             "judge_score": state.judge_score,
         }
