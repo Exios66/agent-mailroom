@@ -7,7 +7,7 @@ from typing import Any
 
 from agent_mailroom.schemas.audit import AuditLogEntry
 from agent_mailroom.storage.catalog import upsert_document
-from agent_mailroom.storage.db import connect, init_db
+from agent_mailroom.storage.db import connect, init_db, locked
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 
 HASH_VERSION = 2
@@ -54,10 +54,12 @@ def write_audit(
     if filename:
         detail.setdefault("original_filename", filename)
 
-    with connect() as conn:
-        parent = conn.execute("SELECT doc_id FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
+    with locked():
+        with connect() as conn:
+            parent = conn.execute(
+                "SELECT doc_id FROM documents WHERE doc_id = ?", (doc_id,)
+            ).fetchone()
         if parent is None:
-            # Satisfy FK before the first catalog write, matching llm-mailroom.
             stub = DocumentManifest(
                 doc_id=doc_id,
                 matter_id=matter_id,
@@ -66,54 +68,54 @@ def write_audit(
             )
             upsert_document(stub)
 
-    with connect() as conn:
-        last = conn.execute(
-            "SELECT entry_hash, seq FROM audit_log WHERE doc_id = ? ORDER BY seq DESC LIMIT 1",
-            (doc_id,),
-        ).fetchone()
-        prev_hash = last["entry_hash"] if last else ""
-        next_seq = (last["seq"] if last else 0) + 1
-        entry = AuditLogEntry(
-            doc_id=doc_id,
-            matter_id=matter_id,
-            event=event,
-            actor=actor,
-            detail=detail,
-            prev_hash=prev_hash,
-            seq=next_seq,
-        )
-        ts = entry.timestamp.astimezone(timezone.utc).isoformat()
-        entry.entry_hash = compute_entry_hash(
-            prev_hash=prev_hash,
-            doc_id=doc_id,
-            entry_id=entry.entry_id,
-            matter_id=matter_id,
-            actor=actor,
-            timestamp=ts,
-            event=event,
-            detail=detail,
-        )
-        conn.execute(
-            """
-            INSERT INTO audit_log (
-                entry_id, doc_id, matter_id, event, actor, detail,
-                prev_hash, entry_hash, seq, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                entry.entry_id,
-                entry.doc_id,
-                entry.matter_id,
-                entry.event,
-                entry.actor,
-                json.dumps(entry.detail),
-                entry.prev_hash,
-                entry.entry_hash,
-                entry.seq,
-                ts,
-            ),
-        )
-        conn.commit()
+        with connect() as conn:
+            last = conn.execute(
+                "SELECT entry_hash, seq FROM audit_log WHERE doc_id = ? ORDER BY seq DESC LIMIT 1",
+                (doc_id,),
+            ).fetchone()
+            prev_hash = last["entry_hash"] if last else ""
+            next_seq = (last["seq"] if last else 0) + 1
+            entry = AuditLogEntry(
+                doc_id=doc_id,
+                matter_id=matter_id,
+                event=event,
+                actor=actor,
+                detail=detail,
+                prev_hash=prev_hash,
+                seq=next_seq,
+            )
+            ts = entry.timestamp.astimezone(timezone.utc).isoformat()
+            entry.entry_hash = compute_entry_hash(
+                prev_hash=prev_hash,
+                doc_id=doc_id,
+                entry_id=entry.entry_id,
+                matter_id=matter_id,
+                actor=actor,
+                timestamp=ts,
+                event=event,
+                detail=detail,
+            )
+            conn.execute(
+                """
+                INSERT INTO audit_log (
+                    entry_id, doc_id, matter_id, event, actor, detail,
+                    prev_hash, entry_hash, seq, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.entry_id,
+                    entry.doc_id,
+                    entry.matter_id,
+                    entry.event,
+                    entry.actor,
+                    json.dumps(entry.detail),
+                    entry.prev_hash,
+                    entry.entry_hash,
+                    entry.seq,
+                    ts,
+                ),
+            )
+            conn.commit()
     return entry
 
 

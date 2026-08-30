@@ -5,11 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
-from agent_mailroom.storage.db import connect, init_db
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from agent_mailroom.storage.db import connect, init_db, locked
 
 
 def upsert_document(manifest: DocumentManifest) -> None:
@@ -35,36 +31,35 @@ def upsert_document(manifest: DocumentManifest) -> None:
         manifest.created_at.isoformat(),
         manifest.updated_at.isoformat(),
     )
-    with connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO documents (
-                doc_id, matter_id, original_filename, stage, graph_node, doc_type,
-                contract_subtype, doc_subclass, classification_confidence,
-                extraction_confidence, extracted_data, report, escalation_reason,
-                review_decision, routing_path, trace_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(doc_id) DO UPDATE SET
-                matter_id=excluded.matter_id,
-                original_filename=excluded.original_filename,
-                stage=excluded.stage,
-                graph_node=excluded.graph_node,
-                doc_type=excluded.doc_type,
-                contract_subtype=excluded.contract_subtype,
-                doc_subclass=excluded.doc_subclass,
-                classification_confidence=excluded.classification_confidence,
-                extraction_confidence=excluded.extraction_confidence,
-                extracted_data=excluded.extracted_data,
-                report=excluded.report,
-                escalation_reason=excluded.escalation_reason,
-                review_decision=excluded.review_decision,
-                routing_path=excluded.routing_path,
-                trace_id=excluded.trace_id,
-                updated_at=excluded.updated_at
-            """,
-            payload,
-        )
-        conn.commit()
+    sql = """
+        INSERT INTO documents (
+            doc_id, matter_id, original_filename, stage, graph_node, doc_type,
+            contract_subtype, doc_subclass, classification_confidence,
+            extraction_confidence, extracted_data, report, escalation_reason,
+            review_decision, routing_path, trace_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(doc_id) DO UPDATE SET
+            matter_id=excluded.matter_id,
+            original_filename=excluded.original_filename,
+            stage=excluded.stage,
+            graph_node=excluded.graph_node,
+            doc_type=excluded.doc_type,
+            contract_subtype=excluded.contract_subtype,
+            doc_subclass=excluded.doc_subclass,
+            classification_confidence=excluded.classification_confidence,
+            extraction_confidence=excluded.extraction_confidence,
+            extracted_data=excluded.extracted_data,
+            report=excluded.report,
+            escalation_reason=excluded.escalation_reason,
+            review_decision=excluded.review_decision,
+            routing_path=excluded.routing_path,
+            trace_id=excluded.trace_id,
+            updated_at=excluded.updated_at
+    """
+    with locked():
+        with connect() as conn:
+            conn.execute(sql, payload)
+            conn.commit()
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -80,35 +75,39 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 
 def get_document(doc_id: str) -> dict[str, Any] | None:
     init_db()
-    with connect() as conn:
-        row = conn.execute("SELECT * FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
+    with locked():
+        with connect() as conn:
+            row = conn.execute("SELECT * FROM documents WHERE doc_id = ?", (doc_id,)).fetchone()
     return _row_to_dict(row) if row else None
 
 
 def list_documents(limit: int = 200) -> list[dict[str, Any]]:
     init_db()
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM documents ORDER BY updated_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+    with locked():
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM documents ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
 def list_review_queue() -> list[dict[str, Any]]:
     init_db()
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM documents WHERE stage = 'review' ORDER BY updated_at DESC"
-        ).fetchall()
+    with locked():
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM documents WHERE stage = 'review' ORDER BY updated_at DESC"
+            ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
 def list_matters(matter_id: str) -> list[dict[str, Any]]:
     init_db()
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM documents WHERE matter_id = ? ORDER BY created_at",
-            (matter_id,),
-        ).fetchall()
+    with locked():
+        with connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM documents WHERE matter_id = ? ORDER BY created_at",
+                (matter_id,),
+            ).fetchall()
     return [_row_to_dict(row) for row in rows]

@@ -22,6 +22,13 @@ from agent_mailroom.storage.catalog import get_document, list_documents, list_ma
 router = APIRouter()
 
 
+def _spawn(fn, **kwargs) -> None:
+    if os.environ.get("MAILROOM_SYNC") == "1":
+        fn(**kwargs)
+        return
+    threading.Thread(target=fn, kwargs=kwargs, daemon=True, name=f"pipeline-{kwargs.get('doc_id', 'job')}").start()
+
+
 def _auth(authorization: str | None) -> None:
     token = os.environ.get("MAILROOM_API_TOKEN", "").strip()
     if not token:
@@ -62,13 +69,7 @@ async def upload(
     doc_id = str(uuid4())
     dest = inbox_dir() / f"{doc_id}--{file.filename}"
     dest.write_bytes(raw)
-    thread = threading.Thread(
-        target=run_document,
-        kwargs={"file_path": dest, "matter_id": matter_id, "doc_id": doc_id},
-        daemon=True,
-        name=f"pipeline-{doc_id[:8]}",
-    )
-    thread.start()
+    _spawn(run_document, file_path=dest, matter_id=matter_id, doc_id=doc_id)
     return JSONResponse(
         status_code=202,
         content={
@@ -145,12 +146,7 @@ def resolve(
             raise HTTPException(status_code=404, detail="no parked file")
         dest = inbox_dir() / parked.name
         dest.write_bytes(parked.read_bytes())
-        thread = threading.Thread(
-            target=run_document,
-            kwargs={"file_path": dest, "matter_id": row["matter_id"], "doc_id": str(uuid4())},
-            daemon=True,
-        )
-        thread.start()
+        _spawn(run_document, file_path=dest, matter_id=row["matter_id"], doc_id=str(uuid4()))
         from agent_mailroom.storage.audit import write_audit
 
         write_audit(doc_id=doc_id, matter_id=row["matter_id"], event="review_requeued", actor="human", detail={})
@@ -192,12 +188,7 @@ def resolve(
     # resume
     if not (override or row.get("doc_type")):
         raise HTTPException(status_code=400, detail="doc_type required to resume")
-    thread = threading.Thread(
-        target=resume_from_review,
-        kwargs={"doc_id": doc_id, "doc_type": override or row.get("doc_type")},
-        daemon=True,
-    )
-    thread.start()
+    _spawn(resume_from_review, doc_id=doc_id, doc_type=override or row.get("doc_type"))
     return {"status": "resumed", "doc_id": doc_id}
 
 
@@ -318,10 +309,6 @@ def demo(body: DemoBody | None = None) -> dict[str, Any]:
         doc_id = str(uuid4())
         dest = inbox_dir() / f"{doc_id}--{path.name}"
         dest.write_bytes(path.read_bytes())
-        threading.Thread(
-            target=run_document,
-            kwargs={"file_path": dest, "matter_id": body.matter_id, "doc_id": doc_id},
-            daemon=True,
-        ).start()
+        _spawn(run_document, file_path=dest, matter_id=body.matter_id, doc_id=doc_id)
         started.append({"doc_id": doc_id, "file": path.name})
     return {"started": started}
