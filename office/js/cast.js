@@ -1,0 +1,30 @@
+export const CAST = {
+  michael: { name: "Michael", shirt: "#5A6B8C", skin: "#F0C8A0", hair: "#3A2A1C", hairStyle: "short" },
+  jim: { name: "Jim", shirt: "#6FA8DC", skin: "#F0C8A0", hair: "#5C3C22", hairStyle: "floppy" },
+  pam: { name: "Pam", shirt: "#9CAF88", skin: "#F0C8A0", hair: "#784C2A", hairStyle: "frame" },
+  dwight: { name: "Dwight", shirt: "#B89B3E", skin: "#F0C8A0", hair: "#40301C", hairStyle: "recede" },
+  kevin: { name: "Kevin", shirt: "#4A7AB5", skin: "#F0C8A0", hair: "#3A2C1E", hairStyle: "bald" },
+  angela: { name: "Angela", shirt: "#8A86A6", skin: "#F0C8A0", hair: "#BAAA5A", hairStyle: "bun" },
+  oscar: { name: "Oscar", shirt: "#7A4B6B", skin: "#C48A5A", hair: "#1C1612", hairStyle: "short" },
+  stanley: { name: "Stanley", shirt: "#8C5A4B", skin: "#6B3E2A", hair: "#3C3630", hairStyle: "recede" },
+  kelly: { name: "Kelly", shirt: "#D16BA5", skin: "#C48A5A", hair: "#181216", hairStyle: "frame" },
+  ryan: { name: "Ryan", shirt: "#3A3A44", skin: "#F0C8A0", hair: "#2A2018", hairStyle: "spiky" },
+  toby: { name: "Toby", shirt: "#9A8C5A", skin: "#F0C8A0", hair: "#6A5A42", hairStyle: "recede" },
+  creed: { name: "Creed", shirt: "#6B7A4B", skin: "#F0C8A0", hair: "#AAA69C", hairStyle: "bald" },
+  meredith: { name: "Meredith", shirt: "#B5544A", skin: "#F0C8A0", hair: "#9A522E", hairStyle: "messy" },
+};
+
+export const ROSTER_CAST = {
+  boss: "michael",
+  sorter: "pam",
+  sorter_reviewer: "kelly",
+  contracts_specialist: "dwight",
+  corporate_records_specialist: "angela",
+  correspondence_specialist: "jim",
+  compliance_specialist: "toby",
+  insurance_claims_specialist: "meredith",
+  judge: "oscar",
+  arbiter: "stanley",
+  reporter: "ryan",
+  archivist: "creed",
+};

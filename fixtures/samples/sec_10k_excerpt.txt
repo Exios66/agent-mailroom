@@ -1,0 +1,18 @@
+UNITED STATES
+SECURITIES AND EXCHANGE COMMISSION
+Washington, D.C. 20549
+
+FORM 10-K
+
+Annual Report pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+for the fiscal year ended December 31, 2025
+
+Commission File Number 001-88421
+HarborPoint Holdings, Inc.
+
+Item 1A. Risk Factors.
+The company depends on a small number of logistics vendors. A material breach
+or interruption in those arrangements could delay fulfillment and harm results.
+
+Item 8. Financial Statements.
+See accompanying consolidated financial statements and notes.

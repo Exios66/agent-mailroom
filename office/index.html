@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Munder Mailroom — Scranton Floor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/office/css/tokens.css">
+  <link rel="stylesheet" href="/office/css/office.css">
+  <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <header class="chrome">
+    <div class="brand">MUNDER MAILROOM<small>Scranton branch · paper &amp; filings</small></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="floor" class="active">Floor</button>
+      <button data-tab="review">Review</button>
+      <button data-tab="hive">Hive</button>
+      <button data-tab="metrics">Metrics</button>
+      <button data-tab="console">Console</button>
+    </nav>
+    <button class="action primary" id="demo-btn">Drop a pile</button>
+    <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      Upload
+      <input id="upload" type="file" hidden accept=".txt,.md,.pdf">
+    </label>
+  </header>
+
+  <main class="shell">
+    <section class="floor-wrap">
+      <canvas id="floor" width="1280" height="768" aria-label="Office floor"></canvas>
+      <div class="legend">Click an envelope or desk · gold = review · maroon office = the boss</div>
+    </section>
+    <aside class="desk">
+      <h2 id="panel-title">Command Center</h2>
+      <div class="body">
+        <section class="view active" id="view-floor">
+          <p class="muted">The floor is the pipeline. Avatars sit the mailroom roster. Envelopes are documents moving desk to desk.</p>
+          <div id="inspect"></div>
+        </section>
+        <section class="view" id="view-review">
+          <div id="review-list"></div>
+        </section>
+        <section class="view" id="view-hive">
+          <div id="hive-list"></div>
+        </section>
+        <section class="view" id="view-metrics">
+          <div id="metrics"></div>
+        </section>
+        <section class="view" id="view-console">
+          <div id="console-log"></div>
+        </section>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="lamp">SOURCE: LIVE PIPELINE</span>
+    <span id="counts">0 on the floor</span>
+    <span>Provider: <span id="provider">mock</span></span>
+  </footer>
+
+  <script type="module" src="/office/js/app.js"></script>
+</body>
+</html>

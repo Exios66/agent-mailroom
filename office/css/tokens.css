@@ -1,0 +1,32 @@
+:root {
+  --cream-50: #fffdf5;
+  --cream-100: #fff8e7;
+  --cream-200: #f4e9c7;
+  --cream-300: #e8d9a0;
+  --paper-100: #fcfaf0;
+  --paper-200: #f0ead2;
+  --ink-900: #1a1320;
+  --ink-700: #3d2e4a;
+  --ink-500: #6b5878;
+  --ink-300: #a899b5;
+  --ink-100: #d9cfe0;
+  --coral: #d96a62;
+  --coral-light: #f3d3cd;
+  --mint: #5ca97a;
+  --mint-light: #d2e7da;
+  --sky: #4f9faf;
+  --sky-light: #cfe5e9;
+  --lemon: #dcab3c;
+  --lemon-light: #f3e4bc;
+  --lilac: #9482d3;
+  --maroon: #6e1423;
+  --maroon-mid: #b23a4e;
+  --gold: #f4d35e;
+  --wood-light: #e5c896;
+  --wood-dark: #c9a66b;
+  --path: #e8d8b0;
+  --wall: #8b6f47;
+  --font-display: "Press Start 2P", ui-monospace, monospace;
+  --font-ui: Inter, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
