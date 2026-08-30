@@ -54,3 +54,8 @@ agent_mailroom = ["config/*.yaml"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+# Monorepo dev: resolve the shared scoring engine from the workspace instead
+# of the release git pin above. Plain `pip install .` keeps using the pin.
+[tool.uv.sources]
+llm-dojo-scoring = { workspace = true }
