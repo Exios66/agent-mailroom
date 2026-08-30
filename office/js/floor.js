@@ -168,13 +168,13 @@ export class OfficeFloor {
     if (event.type === "hive") {
       const fromDesk = Object.values(DESKS).find((d) => d.agent === event.from);
       const toDesk = Object.values(DESKS).find((d) => d.agent === event.to);
-      if (fromDesk && toDesk) {
+      if (toDesk) {
         this.envelopes.push({
-          from: fromDesk.tile,
+          from: fromDesk ? fromDesk.tile : ENTRANCE,
           to: toDesk.tile,
           t: 0,
           dur: 0.9,
-          stamp: event.needs_human ? "#d96a62" : "#fff8e7",
+          stamp: event.needs_human ? "#d96a62" : "#f4d35e",
           act: event.act,
           label: event.subject,
           doc_id: event.doc_id,

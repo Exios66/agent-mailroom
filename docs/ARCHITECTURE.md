@@ -23,3 +23,5 @@ inbox bin ──► ingest ──► sorter (Pam)
 Routing thresholds live in [`src/agent_mailroom/config/taxonomy.yaml`](../src/agent_mailroom/config/taxonomy.yaml). They are not hardcoded.
 
 The office is static files under `office/` served by the same FastAPI process. Live updates go over `/ws`. The display contract (`stage`, `doc_type`, review dispositions) matches The-Mailroom / llm-mailroom so this repo can sit at the center of that constellation.
+
+**Live topics.** `POST /v1/topics` writes a hive `request` to the chosen desk (default: the boss), appends the brief to `hive/board.md`, and — if the body looks like a filing — also drops it into the inbox so the pipeline runs it. The Topics tab is the command-center composer for that flow.

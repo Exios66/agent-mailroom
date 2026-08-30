@@ -56,6 +56,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_doc ON audit_log(doc_id, seq);
 CREATE INDEX IF NOT EXISTS idx_docs_stage ON documents(stage);
+
+CREATE TABLE IF NOT EXISTS topics (
+    topic_id TEXT PRIMARY KEY,
+    matter_id TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT,
+    route_to TEXT NOT NULL DEFAULT 'boss',
+    status TEXT NOT NULL DEFAULT 'queued',
+    doc_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_topics_status ON topics(status);
 """
 
 

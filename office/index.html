@@ -15,6 +15,7 @@
     <div class="brand">MUNDER MAILROOM<small>Scranton branch · paper &amp; filings</small></div>
     <nav class="tabs" id="tabs">
       <button data-tab="floor" class="active">Floor</button>
+      <button data-tab="topics">Topics</button>
       <button data-tab="review">Review</button>
       <button data-tab="hive">Hive</button>
       <button data-tab="metrics">Metrics</button>
@@ -38,6 +39,27 @@
         <section class="view active" id="view-floor">
           <p class="muted">The floor is the pipeline. Avatars sit the mailroom roster. Envelopes are documents moving desk to desk.</p>
           <div id="inspect"></div>
+        </section>
+        <section class="view" id="view-topics">
+          <form id="topic-form" class="card">
+            <h3>Brief the floor</h3>
+            <p class="muted">Michael gets the envelope. Long briefs that look like filings also enter the pipeline.</p>
+            <label>Subject <input id="topic-subject" name="subject" required placeholder="Northwind unpaid invoices"></label>
+            <label>Matter <input id="topic-matter" name="matter_id" value="SCRANTON"></label>
+            <label>Route
+              <select id="topic-route" name="route_to">
+                <option value="boss">Boss (Michael)</option>
+                <option value="sorter">Sorter (Pam)</option>
+                <option value="contracts_specialist">Contracts (Dwight)</option>
+                <option value="judge">Judge (Oscar)</option>
+              </select>
+            </label>
+            <label>Brief <textarea id="topic-body" name="body" rows="6" placeholder="What should the office address?"></textarea></label>
+            <div class="row">
+              <button type="submit" class="action primary">Launch topic</button>
+            </div>
+          </form>
+          <div id="topic-list"></div>
         </section>
         <section class="view" id="view-review">
           <div id="review-list"></div>

@@ -54,6 +54,7 @@ function switchTab(name) {
   });
   document.getElementById("panel-title").textContent = {
     floor: "Command Center",
+    topics: "Live Topics",
     review: "Review Siding",
     hive: "Hive Mailboxes",
     metrics: "Branch Metrics",
@@ -68,6 +69,19 @@ document.getElementById("tabs").addEventListener("click", (ev) => {
 
 document.getElementById("demo-btn").addEventListener("click", async () => {
   await postJSON("/v1/demo", { sample: "all", matter_id: "SCRANTON" });
+});
+
+document.getElementById("topic-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const subject = document.getElementById("topic-subject").value.trim();
+  const body = document.getElementById("topic-body").value;
+  const matterId = document.getElementById("topic-matter").value || "DEFAULT";
+  const routeTo = document.getElementById("topic-route").value;
+  if (!subject) return;
+  await postJSON("/v1/topics", { subject, body, matter_id: matterId, route_to: routeTo });
+  document.getElementById("topic-subject").value = "";
+  document.getElementById("topic-body").value = "";
+  refresh();
 });
 
 document.getElementById("upload").addEventListener("change", async (ev) => {
@@ -132,6 +146,22 @@ function renderHive(data) {
   hiveList.innerHTML = cards.join("");
 }
 
+function renderTopics(topics) {
+  const list = document.getElementById("topic-list");
+  if (!topics.length) {
+    list.innerHTML = `<p class="muted">No live topics yet. Brief Michael and the floor will move.</p>`;
+    return;
+  }
+  list.innerHTML = topics.map((topic) => `
+    <div class="card">
+      <h3>${escapeHtml(topic.subject)}</h3>
+      <span class="chip review">${escapeHtml(topic.status)}</span>
+      <span class="chip">${escapeHtml(topic.route_to)}</span>
+      <p class="muted">${escapeHtml(topic.matter_id)} · ${escapeHtml(topic.topic_id)}</p>
+      ${topic.body ? `<p>${escapeHtml(topic.body).slice(0, 280)}</p>` : ""}
+    </div>`).join("");
+}
+
 function renderMetrics(runs, health) {
   const stages = {};
   for (const run of runs) stages[run.stage] = (stages[run.stage] || 0) + 1;
@@ -145,15 +175,17 @@ function renderMetrics(runs, health) {
 
 async function refresh() {
   try {
-    const [floorData, review, hive, health] = await Promise.all([
+    const [floorData, review, hive, health, topics] = await Promise.all([
       getJSON("/v1/floor"),
       getJSON("/v1/review/queue"),
       getJSON("/v1/hive"),
       getJSON("/v1/health"),
+      getJSON("/v1/topics"),
     ]);
     floor.applySnapshot(floorData.runs || []);
     renderReview(review.documents || []);
     renderHive(hive);
+    renderTopics(topics.topics || []);
     renderMetrics(floorData.runs || [], health);
   } catch (err) {
     appendLog({ type: "error", subject: String(err) });

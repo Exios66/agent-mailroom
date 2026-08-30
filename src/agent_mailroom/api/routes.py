@@ -15,6 +15,7 @@ from agent_mailroom.hive.mailbox import list_inbox, roster_status
 from agent_mailroom.pipeline.bins import inbox_dir, review_dir
 from agent_mailroom.pipeline.events import recent
 from agent_mailroom.pipeline.runner import fail_document, resume_from_review, run_document
+from agent_mailroom.pipeline.topics import launch_topic, office_topics
 from agent_mailroom.pipeline.state import RunState
 from agent_mailroom.storage.audit import list_audit, verify_chain
 from agent_mailroom.storage.catalog import get_document, list_documents, list_matters, list_review_queue
@@ -287,6 +288,37 @@ def meta() -> dict[str, Any]:
         "agents": agent_roster(),
         "dispositions": ["resume", "record", "requeue", "complete"],
     }
+
+
+class TopicBody(BaseModel):
+    subject: str
+    body: str = ""
+    matter_id: str = "DEFAULT"
+    route_to: str = "boss"
+    ingest: bool | None = None
+
+
+@router.get("/topics")
+def topics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    rows = office_topics()
+    return {"count": len(rows), "topics": rows}
+
+
+@router.post("/topics")
+def create_topic(body: TopicBody, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    try:
+        topic = launch_topic(
+            subject=body.subject,
+            body=body.body,
+            matter_id=body.matter_id,
+            route_to=body.route_to,
+            ingest=body.ingest,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "queued", "topic": topic}
 
 
 class DemoBody(BaseModel):
