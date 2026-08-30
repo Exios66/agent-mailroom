@@ -15,7 +15,7 @@ from agent_mailroom.observability.field_scoring import list_scores, metrics_summ
 from agent_mailroom.observability.spans import list_spans
 from agent_mailroom.observability.trace_cache import load_floor, load_run, persist_floor, persist_run
 from agent_mailroom.observability.tracing import flush_health, resolve_provider_name
-from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, taxonomy
+from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, subclass_catalog, taxonomy
 from agent_mailroom.llm.providers import provider_status
 from agent_mailroom.office_theme import tileset_status
 from agent_mailroom.hive.mailbox import list_inbox, roster_status
@@ -26,6 +26,7 @@ from agent_mailroom.pipeline.bins import (
     locate_document,
     read_inbox_meta,
     review_dir,
+    hive_dir,
 )
 from agent_mailroom.pipeline.events import recent
 from agent_mailroom.pipeline.reconsider import enrich_row
@@ -522,7 +523,26 @@ def metrics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
 def hive() -> dict[str, Any]:
     roster = roster_status()
     inboxes = {name: list_inbox(name, 8) for name in roster}
-    return {"registry": roster, "inboxes": inboxes}
+    board_path = hive_dir() / "board.md"
+    board_content = board_path.read_text(encoding="utf-8") if board_path.is_file() else ""
+    board_mtime = board_path.stat().st_mtime if board_path.is_file() else None
+    return {
+        "registry": roster,
+        "inboxes": inboxes,
+        "board": {"content": board_content, "updated_at": board_mtime},
+    }
+
+
+@router.get("/hive/board")
+def hive_board(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    board_path = hive_dir() / "board.md"
+    if not board_path.is_file():
+        return {"content": "", "updated_at": None}
+    return {
+        "content": board_path.read_text(encoding="utf-8"),
+        "updated_at": board_path.stat().st_mtime,
+    }
 
 
 @router.get("/console")
@@ -536,6 +556,7 @@ def meta() -> dict[str, Any]:
     return {
         "service": "agent-mailroom",
         "doc_classes": live_doc_types(),
+        "subclasses": subclass_catalog(),
         "stamps": {row["key"]: row.get("stamp") for row in tax.get("doc_classes", [])},
         "hive_acts": tax.get("hive_acts") or {},
         "trays": ["inbox", "classified", "review", "archive", "failed"],
@@ -709,10 +730,61 @@ def classified_list(authorization: str | None = Header(default=None)) -> dict[st
 
 
 @router.get("/archive")
-def archive_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+def archive_list(
+    reconsider: bool = False,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
     _auth(authorization)
     docs = [document_view(row) for row in list_documents_by_stage("archived")]
+    if reconsider:
+        docs = [doc for doc in docs if doc.get("needs_reconsideration")]
+    return {
+        "count": len(docs),
+        "documents": docs,
+        "filter": "reconsider" if reconsider else "all",
+    }
+
+
+@router.get("/reconsider")
+def reconsider_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    docs = [
+        document_view(row)
+        for row in list_documents_by_stage("archived")
+        if enrich_row(row)["needs_reconsideration"]
+    ]
     return {"count": len(docs), "documents": docs}
+
+
+@router.post("/archive/{doc_id}/requeue")
+def archive_requeue(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    from agent_mailroom.storage.audit import write_audit
+
+    row = get_document(doc_id)
+    if not row or row.get("stage") != "archived":
+        raise HTTPException(status_code=404, detail="not in archive")
+    loc = locate_document(doc_id)
+    path = loc.get("path")
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="archive file missing")
+    new_id = str(uuid4())
+    _accept_inbox(
+        path.read_bytes(),
+        row["original_filename"],
+        doc_id=new_id,
+        matter_id=row["matter_id"],
+        source="reconsider-requeue",
+    )
+    write_audit(
+        doc_id=doc_id,
+        matter_id=row["matter_id"],
+        event="reconsider_requeued",
+        actor="human",
+        detail={"new_doc_id": new_id},
+        filename=row["original_filename"],
+    )
+    return {"status": "requeued", "doc_id": new_id, "from_doc_id": doc_id}
 
 
 @router.get("/archive/{doc_id}")

@@ -31,31 +31,37 @@ doc_classes:
     schema: ContractExtraction
     specialist: contracts_specialist
     stamp: "#7d97b5"
+    subclasses: [nda, msa, lease, employment, services, license]
   - key: merger_agreement
     label: Merger Agreement
     schema: ContractExtraction
     specialist: contracts_specialist
     stamp: "#8aa3c0"
+    subclasses: [stock_purchase, asset_purchase, merger]
   - key: corporate_record
     label: Corporate Record
     schema: CorporateRecordExtraction
     specialist: corporate_records_specialist
     stamp: "#659099"
+    subclasses: [bylaws, resolution, consent, charter]
   - key: correspondence
     label: Correspondence
     schema: CorrespondenceExtraction
     specialist: correspondence_specialist
     stamp: "#e8b478"
+    subclasses: [demand_letter, memo, notice, engagement_letter]
   - key: compliance_filing
     label: Compliance Filing
     schema: ComplianceFilingExtraction
     specialist: compliance_specialist
     stamp: "#7a8fb0"
+    subclasses: [10-k, 10-q, 8-k, state_filing]
   - key: insurance_claim
     label: Insurance Claim
     schema: InsuranceClaimExtraction
     specialist: insurance_claims_specialist
     stamp: "#b18ec2"
+    subclasses: [property, liability, workers_comp, denial]
 
 # Office-floor roster. character ids are original procedural sprites.
 # Optional per-agent harness: provider / model (else OpenRouter defaults).

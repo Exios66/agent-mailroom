@@ -1,12 +1,14 @@
-import { OfficeFloor } from "./floor.js?v=mailroom6";
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom6";
-import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=mailroom6";
-import { HistoryView } from "./history.js?v=mailroom6";
+import { OfficeFloor } from "./floor.js?v=mailroom7";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom7";
+import { connectWS, getJSON, getToken, postJSON, setToken, uploadFile } from "./api.js?v=mailroom7";
+import { HistoryView } from "./history.js?v=mailroom7";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");
 const hiveList = document.getElementById("hive-list");
 const metricsEl = document.getElementById("metrics");
+const providersPanel = document.getElementById("providers-panel");
+const opsResults = document.getElementById("ops-results");
 const consoleLog = document.getElementById("console-log");
 const counts = document.getElementById("counts");
 const providerEl = document.getElementById("provider");
@@ -92,7 +94,9 @@ function renderInspectCard(item) {
       ${audit}
       ${source}
       ${pile ? `<div class="tray-pile">${pile}</div>` : ""}
-    </div>`;
+    </div>
+    ${reviewActionsHtml(item)}`;
+  wireReviewActions(inspect, item);
   inspect.querySelectorAll("[data-doc]").forEach((link) => {
     link.addEventListener("click", () => {
       switchTab("floor");
@@ -223,38 +227,103 @@ function appendLog(event) {
 }
 
 let DOC_CLASSES = ["contract", "merger_agreement", "corporate_record", "correspondence", "compliance_filing", "insurance_claim"];
+let SUBCLASS_CATALOG = {};
+let archiveReconsiderOnly = false;
+
+function subclassOptionsHtml(docType, value = "") {
+  const options = SUBCLASS_CATALOG[docType] || [];
+  const opts = options.map((s) =>
+    `<option value="${escapeHtml(s)}"${s === value ? " selected" : ""}>${escapeHtml(s)}</option>`
+  ).join("");
+  return `<datalist id="subclass-${escapeHtml(docType)}">${opts}</datalist>`;
+}
+
+function reviewActionsHtml(doc) {
+  if (doc.stage !== "review" && !doc.needs_human) return "";
+  const dtype = doc.doc_type || "contract";
+  return `
+    <div class="card review-actions" data-doc="${escapeHtml(doc.doc_id)}">
+      <h3>Resolve from inspector</h3>
+      <label>Doc type
+        <select class="dtype">
+          ${DOC_CLASSES.map((t) => `<option ${t === dtype ? "selected" : ""}>${t}</option>`).join("")}
+        </select>
+      </label>
+      ${subclassOptionsHtml(dtype, doc.doc_subclass || "")}
+      <label>Subclass <input class="subclass" list="subclass-${escapeHtml(dtype)}" value="${escapeHtml(doc.doc_subclass || "")}" placeholder="pick or type"></label>
+      <label>Notes <input class="notes" placeholder="operator notes"></label>
+      <label>Extracted JSON <textarea class="extracted" rows="4">${escapeHtml(JSON.stringify(doc.extracted_data || {}, null, 2))}</textarea></label>
+      <div class="row">
+        <button type="button" data-act="approved" data-disp="resume">Approve</button>
+        <button type="button" data-act="approved" data-disp="record">Record</button>
+        <button type="button" data-act="approved" data-disp="complete">Complete</button>
+        <button type="button" data-act="rejected" data-disp="complete">Reject</button>
+        <button type="button" data-act="approved" data-disp="requeue">Requeue</button>
+      </div>
+    </div>`;
+}
+
+function wireReviewActions(root, doc) {
+  const card = root.querySelector(".review-actions") || root;
+  if (!card?.dataset?.doc && !doc?.doc_id) return;
+  const docId = card.dataset.doc || doc.doc_id;
+  card.querySelectorAll("button[data-act]").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      let extracted = null;
+      try { extracted = JSON.parse(card.querySelector(".extracted")?.value || "{}"); } catch { extracted = null; }
+      await postJSON(`/v1/review/${docId}/resolve`, {
+        decision: btn.dataset.act,
+        disposition: btn.dataset.disp,
+        doc_type: card.querySelector(".dtype")?.value,
+        doc_subclass: card.querySelector(".subclass")?.value,
+        notes: card.querySelector(".notes")?.value,
+        extracted_data: extracted,
+      });
+      refresh();
+    });
+  });
+  const dtypeSel = card.querySelector(".dtype");
+  const subclassInput = card.querySelector(".subclass");
+  if (dtypeSel && subclassInput) {
+    dtypeSel.addEventListener("change", () => {
+      const listId = `subclass-${dtypeSel.value}`;
+      subclassInput.setAttribute("list", listId);
+      if (!document.getElementById(listId) && SUBCLASS_CATALOG[dtypeSel.value]) {
+        const dl = document.createElement("datalist");
+        dl.id = listId;
+        dl.innerHTML = SUBCLASS_CATALOG[dtypeSel.value].map((s) => `<option value="${escapeHtml(s)}">`).join("");
+        card.appendChild(dl);
+      }
+    });
+  }
+}
 
 function renderReview(docs) {
   if (!docs.length) {
     reviewList.innerHTML = `<p class="muted">No documents on the siding. The floor is clearing itself.</p>`;
     return;
   }
-  reviewList.innerHTML = docs.map((doc) => `
-    <div class="card" data-doc="${doc.doc_id}">
+  reviewList.innerHTML = docs.map((doc) => {
+    const dtype = doc.doc_type || "contract";
+    return `
+    <div class="card" data-doc="${doc.doc_id}" data-stage="review">
       <h3>${escapeHtml(doc.original_filename)}</h3>
       <span class="chip review">${escapeHtml(doc.doc_type || "unknown")}</span>
       ${(doc.review_causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
       <p class="muted">${escapeHtml(doc.escalation_reason || "needs a human")}</p>
       <p class="muted">${escapeHtml(doc.matter_id || "")} · bin ${escapeHtml(doc.bin || "review")}</p>
-      <label>Doc type
-        <select class="dtype">
-          ${DOC_CLASSES.map((t) => `<option ${t === doc.doc_type ? "selected" : ""}>${t}</option>`).join("")}
-        </select>
-      </label>
-      <label>Subclass <input class="subclass" value="${escapeHtml(doc.doc_subclass || "")}" placeholder="CUAD subtype, form, etc."></label>
-      <label>Notes <input class="notes" placeholder="operator notes"></label>
-      <label>Extracted JSON <textarea class="extracted" rows="4">${escapeHtml(JSON.stringify(doc.extracted_data || {}, null, 2))}</textarea></label>
+      ${reviewActionsHtml({ ...doc, stage: "review" })}
       <details><summary>Read source</summary><pre class="source-pane" data-src="${doc.doc_id}">loading…</pre></details>
-      <div class="row">
-        <button data-act="approved" data-disp="resume">Approve</button>
-        <button data-act="approved" data-disp="record">Record</button>
-        <button data-act="approved" data-disp="complete">Complete</button>
-        <button data-act="rejected" data-disp="complete">Reject</button>
-        <button data-act="approved" data-disp="requeue">Requeue</button>
-      </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
+  docs.forEach((doc) => {
+    const card = reviewList.querySelector(`.card[data-doc="${doc.doc_id}"]`);
+    if (card) wireReviewActions(card, doc);
+  });
   reviewList.querySelectorAll("details").forEach((el) => {
-    el.addEventListener("toggle", async () => {
+    el.addEventListener("toggle", async (ev) => {
+      ev.stopPropagation();
       if (!el.open) return;
       const pane = el.querySelector(".source-pane");
       if (!pane || pane.dataset.ready) return;
@@ -267,31 +336,17 @@ function renderReview(docs) {
       }
     });
   });
-  reviewList.querySelectorAll("button").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const card = btn.closest(".card");
-      let extracted = null;
-      try { extracted = JSON.parse(card.querySelector(".extracted").value || "{}"); } catch { extracted = null; }
-      await postJSON(`/v1/review/${card.dataset.doc}/resolve`, {
-        decision: btn.dataset.act,
-        disposition: btn.dataset.disp,
-        doc_type: card.querySelector(".dtype").value,
-        doc_subclass: card.querySelector(".subclass").value,
-        notes: card.querySelector(".notes").value,
-        extracted_data: extracted,
-      });
-      refresh();
-    });
-  });
+  bindInspectCards(reviewList);
 }
 
 function bindInspectCards(root) {
-  root.querySelectorAll("[data-doc]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const id = el.dataset.doc;
+  root.querySelectorAll(".card[data-doc]").forEach((card) => {
+    card.addEventListener("click", (ev) => {
+      if (ev.target.closest("button,input,select,textarea,label,details,a,.review-actions")) return;
+      const id = card.dataset.doc;
       if (!id) return;
       switchTab("floor");
-      showInspect({ doc_id: id, filename: el.querySelector("h3")?.textContent || el.textContent });
+      showInspect({ doc_id: id, filename: card.querySelector("h3")?.textContent || id, stage: card.dataset.stage });
     });
   });
 }
@@ -350,29 +405,34 @@ function renderArchive(docs) {
   const list = document.getElementById("archive-list");
   if (!list) return;
   if (!docs.length) {
-    list.innerHTML = `<p class="muted">Creed's shelves are empty.</p>`;
+    list.innerHTML = `<p class="muted">${archiveReconsiderOnly ? "No reconsider filings on the shelves." : "Creed's shelves are empty."}</p>`;
     return;
   }
   list.innerHTML = docs.map((doc) => `
-    <div class="card" data-doc="${doc.doc_id}">
+    <div class="card" data-doc="${doc.doc_id}" data-stage="${escapeHtml(doc.stage || "archived")}">
       <h3>${escapeHtml(doc.original_filename)}</h3>
       <span class="chip">${escapeHtml(doc.doc_type || "unknown")}</span>
       ${doc.needs_reconsideration ? `<span class="chip review">RECONSIDER</span>` : `<span class="chip">chain ${doc.bin || "archive"}</span>`}
+      ${(doc.review_causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
       <p class="muted">${escapeHtml(doc.matter_id)} · ${escapeHtml(doc.doc_id)}</p>
       <div class="row">
-        <button data-inspect="${doc.doc_id}">Inspect</button>
-        <button data-verify="${doc.doc_id}">Verify chain</button>
+        ${doc.needs_reconsideration ? `<button type="button" data-requeue="${doc.doc_id}">Requeue</button>` : ""}
+        <button type="button" data-verify="${doc.doc_id}">Verify chain</button>
       </div>
       <pre class="verify-pane" hidden></pre>
     </div>`).join("");
-  list.querySelectorAll("[data-inspect]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      switchTab("floor");
-      showInspect({ doc_id: btn.dataset.inspect, filename: "Archive" });
+  bindInspectCards(list);
+  list.querySelectorAll("[data-requeue]").forEach((btn) => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
+      const result = await postJSON(`/v1/archive/${btn.dataset.requeue}/requeue`, {});
+      window.__MAILROOM_OPS_NOTE__ = `Requeued ${btn.dataset.requeue} → ${result.doc_id}`;
+      refresh();
     });
   });
   list.querySelectorAll("[data-verify]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
       const card = btn.closest(".card");
       const pane = card.querySelector(".verify-pane");
       const result = await getJSON(`/v1/archive/${btn.dataset.verify}/verify`);
@@ -392,19 +452,13 @@ function renderFailed(docs) {
     return;
   }
   list.innerHTML = docs.map((doc) => `
-    <div class="card" data-doc="${doc.doc_id}">
+    <div class="card" data-doc="${doc.doc_id}" data-stage="failed">
       <h3>${escapeHtml(doc.original_filename)}</h3>
       <span class="chip fail">failed</span>
       ${(doc.review_causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
       <p class="muted">${escapeHtml(doc.escalation_reason || "rejected")}</p>
-      <div class="row"><button data-inspect="${doc.doc_id}">Inspect</button></div>
     </div>`).join("");
-  list.querySelectorAll("[data-inspect]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      switchTab("floor");
-      showInspect({ doc_id: btn.dataset.inspect, filename: "Returns" });
-    });
-  });
+  bindInspectCards(list);
 }
 
 function renderMatters(data) {
@@ -445,6 +499,10 @@ function renderMatters(data) {
 
 function renderHive(data) {
   const acts = floor.hiveActs || {};
+  const board = data.board?.content || "";
+  const boardBlock = board
+    ? `<div class="card"><h3>Blackboard</h3><pre class="hive-board">${escapeHtml(board)}</pre></div>`
+    : "";
   const cards = Object.entries(data.registry || {}).map(([name, meta]) => {
     const character = ROSTER_CAST[name];
     const mail = (data.inboxes?.[name] || []).slice(0, 3);
@@ -457,8 +515,87 @@ function renderHive(data) {
       }).join("")}
     </div>`;
   });
-  hiveList.innerHTML = cards.join("");
+  hiveList.innerHTML = boardBlock + cards.join("");
 }
+
+function renderProviders(data) {
+  if (!providersPanel || !data) return;
+  const harnesses = data.harnesses || [];
+  providerEl.textContent = data.requested !== data.active ? `${data.requested}→${data.active}` : (data.active || "mock");
+  providersPanel.innerHTML = `
+    <div class="card">
+      <h3>LLM harnesses</h3>
+      <p class="muted">Active ${escapeHtml(data.active || "")} · model ${escapeHtml(data.model || "")} · fallback ${escapeHtml(data.fallback || "")}</p>
+      <table class="providers-table">
+        <thead><tr><th>Agent</th><th>Provider</th><th>Model</th><th>Configured</th></tr></thead>
+        <tbody>
+          ${harnesses.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.name || "")}</td>
+              <td>${escapeHtml(row.name || "")}</td>
+              <td>${escapeHtml(row.default_model || "")}</td>
+              <td>${row.configured ? "yes" : "no"}</td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function renderOpsResults(result, kind) {
+  if (!opsResults || !result) return;
+  if (kind === "sweep") {
+    const rows = (result.details || []).map((row) =>
+      `<li><button type="button" class="linkish" data-doc-link="${escapeHtml(row.doc_id)}">${escapeHtml(row.filename || row.doc_id)}</button>
+        <span class="chip">${escapeHtml(row.stage || "")}</span>
+        ${(row.causes || []).map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}
+      </li>`
+    ).join("");
+    opsResults.innerHTML = `
+      <details class="card" open>
+        <summary>Sweep · ${result.escalated || 0} escalated · review ${result.review || 0} · returns ${result.failed || 0} · reconsider ${result.reconsider || 0}</summary>
+        <ol class="audit">${rows || "<li class='muted'>Nothing to sweep</li>"}</ol>
+      </details>`;
+  } else if (kind === "recover") {
+    const rows = (result.recovered || []).map((row) =>
+      `<li><button type="button" class="linkish" data-doc-link="${escapeHtml(row.doc_id)}">${escapeHtml(row.doc_id)}</button>
+        <span class="chip">from ${escapeHtml(row.from_bin || "?")}</span></li>`
+    ).join("");
+    opsResults.innerHTML = `
+      <details class="card" open>
+        <summary>Recover · ${result.count || 0} stuck filings moved to review</summary>
+        <ol class="audit">${rows || "<li class='muted'>Nothing stuck</li>"}</ol>
+      </details>`;
+  }
+  opsResults.querySelectorAll("[data-doc-link]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchTab("floor");
+      showInspect({ doc_id: btn.dataset.docLink, filename: btn.textContent });
+    });
+  });
+}
+
+function wireAuth(meta) {
+  const gate = document.getElementById("auth-gate");
+  const input = document.getElementById("auth-token");
+  if (!gate || !input) return;
+  const required = meta?.auth_required;
+  const hasToken = Boolean(getToken());
+  gate.hidden = !required || hasToken;
+  if (!gate.dataset.ready) {
+    gate.dataset.ready = "1";
+    gate.addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      setToken(input.value.trim());
+      gate.hidden = true;
+      refresh();
+    });
+  }
+}
+
+window.addEventListener("mailroom:auth-required", () => {
+  const gate = document.getElementById("auth-gate");
+  if (gate) gate.hidden = false;
+});
 
 function renderTopics(topics) {
   const list = document.getElementById("topic-list");
@@ -552,6 +689,7 @@ function renderMetrics(runs, health, ops) {
   document.getElementById("sweep-btn")?.addEventListener("click", async () => {
     const result = await postJSON("/v1/ops/sweep", {});
     window.__MAILROOM_OPS_NOTE__ = `Sweep: ${result.escalated || 0} hive pings · review ${result.review || 0} · returns ${result.failed || 0} · reconsider ${result.reconsider || 0}`;
+    renderOpsResults(result, "sweep");
     refresh();
   });
   document.getElementById("recover-btn")?.addEventListener("click", async () => {
@@ -560,6 +698,7 @@ function renderMetrics(runs, health, ops) {
     window.__MAILROOM_OPS_NOTE__ = result.count
       ? `Recovered ${result.count}${names ? `: ${names}` : ""}`
       : "Nothing stuck to recover";
+    renderOpsResults(result, "recover");
     refresh();
   });
 }
@@ -574,7 +713,8 @@ function setBadge(name, count) {
 
 async function refresh() {
   try {
-    const [floorData, review, hive, health, topics, ops, datasets, queue, archive, failed, classified, matters, meta, consoleHist] = await Promise.all([
+    const archivePath = archiveReconsiderOnly ? "/v1/archive?reconsider=true" : "/v1/archive";
+    const [floorData, review, hive, health, topics, ops, datasets, queue, archive, failed, classified, matters, meta, consoleHist, providers] = await Promise.all([
       getJSON("/v1/floor"),
       getJSON("/v1/review/queue"),
       getJSON("/v1/hive"),
@@ -583,14 +723,17 @@ async function refresh() {
       getJSON("/v1/ops/status"),
       getJSON("/v1/datasets"),
       getJSON("/v1/queue"),
-      getJSON("/v1/archive"),
+      getJSON(archivePath),
       getJSON("/v1/failed"),
       getJSON("/v1/classified"),
       getJSON("/v1/matters"),
       getJSON("/v1/meta"),
       getJSON("/v1/console"),
+      getJSON("/v1/providers").catch(() => null),
     ]);
     if (Array.isArray(meta.doc_classes) && meta.doc_classes.length) DOC_CLASSES = meta.doc_classes;
+    if (meta.subclasses) SUBCLASS_CATALOG = meta.subclasses;
+    wireAuth(meta);
     if (meta.hive_acts) floor.setHiveActs(meta.hive_acts);
     floor.applySnapshot(floorData.runs || [], floorData.bins);
     renderReview(review.documents || []);
@@ -602,6 +745,7 @@ async function refresh() {
     renderTopics(topics.topics || []);
     renderDatasets(datasets);
     renderMetrics(floorData.runs || [], health, ops);
+    if (providers) renderProviders(providers);
     setBadge("inbox", queue.counts?.inbox ?? floorData.inbox_pending ?? 0);
     setBadge("review", review.review_queue ?? floorData.review_queue ?? 0);
     setBadge("archive", archive.count ?? floorData.archived ?? 0);
@@ -637,6 +781,10 @@ function markTheme() {
 }
 
 wireCredits();
+document.getElementById("archive-reconsider-only")?.addEventListener("change", (ev) => {
+  archiveReconsiderOnly = ev.target.checked;
+  refresh();
+});
 document.body.dataset.panel = "floor";
 connectWS((event) => {
   floor.ingestEvent(event);

@@ -32,6 +32,15 @@ def live_doc_types() -> list[str]:
     return [row["key"] for row in taxonomy()["doc_classes"]]
 
 
+def subclass_catalog() -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for row in taxonomy().get("doc_classes", []):
+        subs = row.get("subclasses") or []
+        if subs:
+            out[row["key"]] = [str(s) for s in subs]
+    return out
+
+
 def extractable_types() -> set[str]:
     return set(live_doc_types())
 

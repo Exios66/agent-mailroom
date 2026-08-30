@@ -1,4 +1,4 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom6";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom7";
 import {
   TILE,
   SCALE,
@@ -10,8 +10,8 @@ import {
   tileToPx,
   getDesks,
   getBins,
-} from "./layout.js?v=mailroom6";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom6";
+} from "./layout.js?v=mailroom7";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom7";
 
 export { TILE, SCALE, deskForRun, binForRun, tileToPx, getDesks, getBins };
 
