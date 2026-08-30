@@ -8,14 +8,19 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+.tox/
+.env.local
 
 .git/
 .github/
+.gitignore
 .cursor/
 .idea/
 .vscode/
 *.swp
+*.swo
 .DS_Store
+.editorconfig
 
 data/
 *.db
@@ -35,3 +40,12 @@ docs/
 
 agent-transcripts/
 terminals/
+
+# Python build artifacts
+build/
+*.egg/
+.setuptools-scm/
+
+# IDE & OS
+Thumbs.db
+.AppleDouble
