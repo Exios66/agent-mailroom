@@ -1,0 +1,76 @@
+{
+  "id": "mailroom",
+  "engine": "tiled",
+  "map": "maps/office.tmj",
+  "credit": {
+    "author": "LimeZu",
+    "pack": "Modern Interiors - RPG Tileset [16X16]",
+    "url": "https://limezu.itch.io/moderninteriors",
+    "home": "https://limezu.itch.io/",
+    "license": "Complete Version"
+  },
+  "tilesets": [
+    {
+      "name": "office-tileset",
+      "image": "tilesets/office-tileset.png",
+      "firstgid": 1,
+      "columns": 16,
+      "tilecount": 512,
+      "tilewidth": 16,
+      "tileheight": 16,
+      "imagewidth": 256,
+      "imageheight": 512
+    },
+    {
+      "name": "a5-office-floors-walls",
+      "image": "tilesets/a5-office-floors-walls.png",
+      "firstgid": 513,
+      "columns": 16,
+      "tilecount": 512,
+      "tilewidth": 16,
+      "tileheight": 16,
+      "imagewidth": 256,
+      "imageheight": 512
+    },
+    {
+      "name": "interiors",
+      "image": "tilesets/interiors.png",
+      "firstgid": 1025,
+      "columns": 16,
+      "tilecount": 1424,
+      "tilewidth": 16,
+      "tileheight": 16,
+      "imagewidth": 256,
+      "imageheight": 1424
+    }
+  ],
+  "desks": {
+    "desk-boss": { "spawn": "desk-ceo", "agent": "boss", "label": "Michael", "face": "down" },
+    "desk-reception": { "spawn": "desk-agent-organizer", "agent": "sorter", "label": "Pam", "face": "up" },
+    "desk-reception-2": { "spawn": "warroom-seat", "agent": "sorter_reviewer", "label": "Kelly", "face": "up" },
+    "desk-judge": { "spawn": "desk-chief-architect", "agent": "judge", "label": "Oscar", "face": "up" },
+    "desk-arbiter": { "spawn": "desk-ui-ux-expert", "agent": "arbiter", "label": "Stanley", "face": "up" },
+    "desk-archive": { "spawn": "desk-backend-engineer", "agent": "archivist", "label": "Creed", "face": "up" },
+    "desk-report": { "spawn": "desk-product-manager", "agent": "reporter", "label": "Ryan", "face": "up" },
+    "desk-contracts": { "spawn": "pc-1", "agent": "contracts_specialist", "label": "Dwight", "face": "up" },
+    "desk-corporate": { "spawn": "pc-2", "agent": "corporate_records_specialist", "label": "Angela", "face": "up" },
+    "desk-correspondence": { "spawn": "pc-3", "agent": "correspondence_specialist", "label": "Jim", "face": "up" },
+    "desk-compliance": { "spawn": "pc-4", "agent": "compliance_specialist", "label": "Toby", "face": "up" },
+    "desk-claims": { "spawn": "pc-5", "agent": "insurance_claims_specialist", "label": "Meredith", "face": "up" }
+  },
+  "rooms": [
+    { "id": "boss", "name": "BOSS", "x": 1, "y": 1, "w": 8, "h": 6 },
+    { "id": "reception", "name": "RECEPTION", "x": 18, "y": 4, "w": 7, "h": 5 },
+    { "id": "judge", "name": "JUDGE", "x": 25, "y": 1, "w": 8, "h": 7 },
+    { "id": "bay-a", "name": "BAY A", "x": 1, "y": 10, "w": 12, "h": 5 },
+    { "id": "bay-b", "name": "BAY B", "x": 13, "y": 10, "w": 12, "h": 5 },
+    { "id": "archive", "name": "ARCHIVE", "x": 1, "y": 16, "w": 8, "h": 4 },
+    { "id": "report", "name": "REPORT", "x": 9, "y": 16, "w": 8, "h": 4 },
+    { "id": "cafe", "name": "CAFE", "x": 24, "y": 12, "w": 8, "h": 8 }
+  ],
+  "wander": ["entrance", "cafe-seat-1", "cafe-seat-2", "cafe-stand-coffee", "cafe-stand-vending"],
+  "monitor": {
+    "offTopLeftGid": 365,
+    "onGids": [[367, 0, 0], [368, 1, 0], [383, 0, 1], [384, 1, 1]]
+  }
+}

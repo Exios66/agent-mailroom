@@ -1,6 +1,6 @@
-import { OfficeFloor, DESKS } from "./floor.js";
-import { CAST, ROSTER_CAST } from "./cast.js";
-import { connectWS, getJSON, postJSON, uploadFile } from "./api.js";
+import { OfficeFloor } from "./floor.js?v=limezu1";
+import { CAST, ROSTER_CAST } from "./cast.js?v=limezu1";
+import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=limezu1";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");
@@ -58,10 +58,11 @@ function switchTab(name) {
   });
   document.getElementById("panel-title").textContent = {
     floor: "Command Center",
+    datasets: "Hub Datasets",
     topics: "Live Topics",
     review: "Review Siding",
     hive: "Hive Mailboxes",
-    metrics: "Branch Metrics",
+    metrics: "Floor Metrics",
     console: "Live Console",
   }[name];
 }
@@ -72,7 +73,16 @@ document.getElementById("tabs").addEventListener("click", (ev) => {
 });
 
 document.getElementById("demo-btn").addEventListener("click", async () => {
-  await postJSON("/v1/demo", { sample: "all", matter_id: "SCRANTON" });
+  await postJSON("/v1/demo", { sample: "all", matter_id: "DEMO" });
+});
+
+document.getElementById("dataset-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const corpus = document.getElementById("dataset-corpus").value;
+  const limit = Number(document.getElementById("dataset-limit").value || 3);
+  const matterId = document.getElementById("dataset-matter").value || "HUB";
+  await postJSON("/v1/datasets/pull", { corpus, limit, matter_id: matterId });
+  refresh();
 });
 
 document.getElementById("brief-btn").addEventListener("click", () => switchTab("topics"));
@@ -119,7 +129,7 @@ function renderReview(docs) {
             `<option ${t === doc.doc_type ? "selected" : ""}>${t}</option>`).join("")}
         </select>
       </label>
-      <label>Notes <input class="notes" placeholder="that's what she said"></label>
+      <label>Notes <input class="notes" placeholder="operator notes"></label>
       <div class="row">
         <button data-act="approved" data-disp="resume">Approve</button>
         <button data-act="rejected" data-disp="resume">Reject</button>
@@ -189,10 +199,35 @@ function renderTopics(topics) {
   });
 }
 
+function renderDatasets(data) {
+  const select = document.getElementById("dataset-corpus");
+  const current = select.value;
+  const rows = data.pipeline || [];
+  if (!select.dataset.ready) {
+    select.innerHTML = rows.map((c) =>
+      `<option value="${escapeHtml(c.slug)}">${escapeHtml(c.slug)} · ${c.n_docs ?? "?"} rows</option>`
+    ).join("");
+    select.dataset.ready = "1";
+    if (rows.some((c) => c.slug === "docclass-pilot")) select.value = "docclass-pilot";
+  } else if (current) {
+    select.value = current;
+  }
+  const list = document.getElementById("dataset-list");
+  list.innerHTML = rows.map((c) => `
+    <div class="card">
+      <h3>${escapeHtml(c.slug)}</h3>
+      <span class="chip">${escapeHtml(c.id)}</span>
+      <p class="muted">${escapeHtml(c.note || c.role)} · ${(c.classes || []).join(", ")}</p>
+    </div>`).join("");
+}
+
 function renderMetrics(runs, health, ops) {
   const stages = {};
   for (const run of runs) stages[run.stage] = (stages[run.stage] || 0) + 1;
-  providerEl.textContent = health?.checks?.llm_provider || "mock";
+  const llm = health?.checks?.llm || {};
+  const active = llm.active || health?.checks?.llm_provider || "mock";
+  const requested = llm.requested || active;
+  providerEl.textContent = requested !== active ? `${requested}→${active}` : active;
   const lamp = health?.checks?.watcher || ops?.watcher?.lamp || "ok";
   const pending = health?.checks?.inbox_pending ?? ops?.inbox_pending ?? 0;
   document.getElementById("lamp").textContent =
@@ -200,6 +235,7 @@ function renderMetrics(runs, health, ops) {
   metricsEl.innerHTML = `
     <div class="card"><h3>On the floor</h3><p>${runs.length} documents</p></div>
     <div class="card"><h3>Watcher</h3><p>${escapeHtml(lamp)} · inbox ${pending}</p></div>
+    <div class="card"><h3>Harness</h3><p>${escapeHtml(requested)} active ${escapeHtml(active)} · ${escapeHtml(llm.model || "")}</p></div>
     <div class="card"><h3>Review siding</h3><p>${ops?.review_queue ?? 0}</p></div>
     ${Object.entries(stages).map(([k, v]) => `<div class="card"><h3>${escapeHtml(k)}</h3><p>${v}</p></div>`).join("")}
   `;
@@ -207,18 +243,20 @@ function renderMetrics(runs, health, ops) {
 
 async function refresh() {
   try {
-    const [floorData, review, hive, health, topics, ops] = await Promise.all([
+    const [floorData, review, hive, health, topics, ops, datasets] = await Promise.all([
       getJSON("/v1/floor"),
       getJSON("/v1/review/queue"),
       getJSON("/v1/hive"),
       getJSON("/v1/health"),
       getJSON("/v1/topics"),
       getJSON("/v1/ops/status"),
+      getJSON("/v1/datasets"),
     ]);
     floor.applySnapshot(floorData.runs || []);
     renderReview(review.documents || []);
     renderHive(hive);
     renderTopics(topics.topics || []);
+    renderDatasets(datasets);
     renderMetrics(floorData.runs || [], health, ops);
     const queued = topics.queued || 0;
     const live = topics.live || 0;
@@ -228,12 +266,40 @@ async function refresh() {
   }
 }
 
+function wireCredits() {
+  const credit = document.getElementById("limezu-credit");
+  if (!credit) return;
+  credit.addEventListener("click", (ev) => {
+    if (window.mailroomDesktop?.openCredits) {
+      ev.preventDefault();
+      window.mailroomDesktop.openCredits();
+    }
+  });
+}
+
+function markTheme() {
+  const lamp = document.getElementById("theme-lamp");
+  if (!lamp) return;
+  const theme = floor.themeSource || window.__MAILROOM__?.theme || "procedural";
+  lamp.textContent = theme === "limezu" ? "Floor: LimeZu" : "Floor: procedural";
+}
+
+wireCredits();
 connectWS((event) => {
   floor.ingestEvent(event);
   appendLog(event);
 });
 
+function startOffice() {
+  markTheme();
+  refresh();
+}
+const whenBooted = floor.booted && typeof floor.booted.then === "function"
+  ? floor.booted
+  : Promise.resolve();
+whenBooted.then(startOffice).catch((err) => {
+  console.warn("office boot", err);
+  startOffice();
+});
 refresh();
 setInterval(refresh, 2500);
-
-void DESKS;

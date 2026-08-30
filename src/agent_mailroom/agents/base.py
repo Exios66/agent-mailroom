@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_mailroom.llm.client import chat_json
+from agent_mailroom.config.loader import agent_config
+from agent_mailroom.llm.client import LLMError, chat_json
 
 PROMPTS: dict[str, str] = {
     "sorter": "You are the mailroom sorter. Classify the document into contract, merger_agreement, corporate_record, correspondence, compliance_filing, insurance_claim, or unknown. Return doc_type, contract_subtype, doc_subclass, confidence (0-1), reasoning.",
@@ -21,4 +22,7 @@ PROMPTS: dict[str, str] = {
 
 def run_agent(name: str, user: str) -> dict[str, Any]:
     system = PROMPTS.get(name, "You are a mailroom agent. Return JSON.")
-    return chat_json(name, system, user)
+    try:
+        return chat_json(name, system, user, agent_cfg=agent_config(name))
+    except LLMError as exc:
+        return {"error": str(exc), "confidence": 0.0, "doc_type": "unknown", "reasoning": str(exc)}

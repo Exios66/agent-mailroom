@@ -1,58 +1,42 @@
-import { CAST, ROSTER_CAST } from "./cast.js";
+import { CAST, ROSTER_CAST } from "./cast.js?v=limezu1";
+import {
+  TILE,
+  SCALE,
+  layout,
+  applyTiledLayout,
+  deskForRun,
+  isWalkable,
+  tileToPx,
+  getDesks,
+} from "./layout.js?v=limezu1";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=limezu1";
 
-export const TILE = 16;
-export const COLS = 40;
-export const ROWS = 24;
-export const SCALE = 2;
+export { TILE, SCALE, deskForRun, tileToPx, getDesks };
+export const DESKS = new Proxy(
+  {},
+  {
+    get(_, key) {
+      if (key === Symbol.toStringTag) return "Object";
+      if (key === "then") return undefined;
+      const desks = getDesks();
+      if (key === Symbol.iterator) return undefined;
+      return desks[key];
+    },
+    ownKeys() {
+      return Reflect.ownKeys(getDesks());
+    },
+    getOwnPropertyDescriptor(_, key) {
+      const desks = getDesks();
+      if (key in desks) return { configurable: true, enumerable: true, value: desks[key] };
+      return undefined;
+    },
+    has(_, key) {
+      return key in getDesks();
+    },
+  },
+);
+
 const WALK_SPEED = 48;
-
-export const ROOMS = [
-  { id: "boss", name: "BOSS", x: 1, y: 1, w: 9, h: 7, floor: "#c9a66b", trim: "#6e1423" },
-  { id: "reception", name: "RECEPTION", x: 12, y: 1, w: 12, h: 6, floor: "#f0ead2", trim: "#8b6f47" },
-  { id: "judge", name: "JUDGE", x: 26, y: 1, w: 13, h: 7, floor: "#e0daf2", trim: "#3d2e4a" },
-  { id: "archive", name: "ARCHIVE", x: 1, y: 10, w: 9, h: 6, floor: "#d2e7da", trim: "#5ca97a" },
-  { id: "report", name: "REPORT", x: 30, y: 10, w: 9, h: 6, floor: "#cfe5e9", trim: "#4f9faf" },
-  { id: "bay-a", name: "BAY A", x: 1, y: 17, w: 17, h: 6, floor: "#e5c896", trim: "#8b6f47" },
-  { id: "bay-b", name: "BAY B", x: 22, y: 17, w: 17, h: 6, floor: "#e5c896", trim: "#8b6f47" },
-];
-
-export const DESKS = {
-  "desk-boss": { tile: [4, 4], agent: "boss", label: "Michael", face: "down" },
-  "desk-reception": { tile: [15, 3], agent: "sorter", label: "Pam", face: "down" },
-  "desk-reception-2": { tile: [20, 3], agent: "sorter_reviewer", label: "Kelly", face: "down" },
-  "desk-judge": { tile: [30, 3], agent: "judge", label: "Oscar", face: "down" },
-  "desk-arbiter": { tile: [35, 3], agent: "arbiter", label: "Stanley", face: "down" },
-  "desk-archive": { tile: [4, 12], agent: "archivist", label: "Creed", face: "right" },
-  "desk-report": { tile: [34, 12], agent: "reporter", label: "Ryan", face: "left" },
-  "desk-contracts": { tile: [4, 19], agent: "contracts_specialist", label: "Dwight", face: "down" },
-  "desk-corporate": { tile: [12, 19], agent: "corporate_records_specialist", label: "Angela", face: "down" },
-  "desk-correspondence": { tile: [25, 19], agent: "correspondence_specialist", label: "Jim", face: "down" },
-  "desk-compliance": { tile: [30, 19], agent: "compliance_specialist", label: "Toby", face: "down" },
-  "desk-claims": { tile: [35, 19], agent: "insurance_claims_specialist", label: "Meredith", face: "down" },
-};
-
-export const ENTRANCE = [19, 22];
-
-const DOORS = [
-  [5, 7], [5, 8],
-  [16, 6], [17, 6], [18, 6], [16, 7], [17, 7], [18, 7], [17, 8],
-  [31, 7], [32, 7], [31, 8],
-  [9, 12], [10, 12],
-  [29, 12], [30, 12],
-  [8, 16], [8, 17],
-  [28, 16], [28, 17],
-  [19, 21],
-];
-
-const WANDER = [
-  [19, 14],
-  [19, 22],
-  [11, 13],
-  [20, 9],
-  [21, 19],
-  [6, 14],
-  [33, 14],
-];
 
 const QUIPS = {
   idle: ["that's what she said", "paper jam", "need coffee", "still counts", "dink-dink"],
@@ -79,74 +63,9 @@ const QUIPS = {
   },
 };
 
-export const STAGE_DESK = {
-  inbox: "desk-reception",
-  ingest: "desk-reception",
-  classify: "desk-reception",
-  retry_classify: "desk-reception-2",
-  review_classify: "desk-reception-2",
-  extract: null,
-  retry_extract: null,
-  judge_verify: "desk-judge",
-  arbiter: "desk-arbiter",
-  boss: "desk-boss",
-  boss_escalation: "desk-boss",
-  review: "desk-boss",
-  human_review: "desk-boss",
-  report: "desk-report",
-  compile_report: "desk-report",
-  catalog: "desk-archive",
-  catalog_write: "desk-archive",
-  archive: "desk-archive",
-  archived: "desk-archive",
-};
-
-const SPECIALIST_DESK = {
-  contract: "desk-contracts",
-  merger_agreement: "desk-contracts",
-  corporate_record: "desk-corporate",
-  correspondence: "desk-correspondence",
-  compliance_filing: "desk-compliance",
-  insurance_claim: "desk-claims",
-};
-
-export function deskForRun(run) {
-  if (run.stage === "extract" || run.stage === "retry_extract") {
-    return SPECIALIST_DESK[run.doc_type] || "desk-contracts";
-  }
-  return STAGE_DESK[run.stage] || "desk-reception";
-}
-
-export function tileToPx(tile) {
-  return { x: tile[0] * TILE + TILE / 2, y: tile[1] * TILE + TILE / 2 };
-}
-
 function hexToRgb(hex) {
   const n = hex.replace("#", "");
   return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)];
-}
-
-function doorKey(x, y) {
-  return `${x},${y}`;
-}
-
-const DOOR_SET = new Set(DOORS.map(([x, y]) => doorKey(x, y)));
-
-function inRoomInterior(tx, ty) {
-  for (const room of ROOMS) {
-    if (tx > room.x && tx < room.x + room.w - 1 && ty > room.y && ty < room.y + room.h - 1) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isWalkable(tx, ty) {
-  if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return false;
-  if (tx >= 10 && tx <= 29 && ty >= 8 && ty <= 16) return true;
-  if (ty >= 21) return true;
-  if (DOOR_SET.has(doorKey(tx, ty))) return true;
-  return inRoomInterior(tx, ty);
 }
 
 function findPath(from, to) {
@@ -246,7 +165,7 @@ function drawBubble(ctx, px, py, text, lift) {
   ctx.font = "6px monospace";
   const w = Math.max(32, label.length * 3.4 + 8);
   const h = 11;
-  const x = Math.round(Math.max(2, Math.min(COLS * TILE - w - 2, px - w / 2)));
+  const x = Math.round(Math.max(2, Math.min(layout.cols * TILE - w - 2, px - w / 2)));
   const y = Math.round(Math.max(2, py - 24 - lift));
   ctx.fillStyle = "#1a1320";
   ctx.fillRect(x, y, w, h);
@@ -327,9 +246,46 @@ function drawDeskSet(ctx, desk, working) {
   ctx.fillRect(p.x - 6, p.y - 2, 3, 2);
 }
 
+function drawRoomPlates(ctx) {
+  ctx.font = "5px monospace";
+  for (const room of layout.rooms) {
+    const x = room.x * TILE + 3;
+    const y = room.y * TILE + 7;
+    const w = Math.max(28, room.name.length * 3.3 + 6);
+    ctx.fillStyle = "rgba(26,19,32,0.72)";
+    ctx.fillRect(x - 1, y - 5, w, 8);
+    ctx.fillStyle = "#fff8e7";
+    ctx.fillText(room.name, x, y);
+  }
+}
+
+function drawProceduralGround(ctx) {
+  ctx.fillStyle = "#7aa35a";
+  ctx.fillRect(0, 0, layout.cols * TILE, layout.rows * TILE);
+  for (let y = 0; y < layout.rows; y += 1) {
+    for (let x = 0; x < layout.cols; x += 1) {
+      const path = (x >= 10 && x <= 29 && y >= 8 && y <= 16) || y >= 21;
+      ctx.fillStyle = path ? ((x + y) % 2 ? "#e8d8b0" : "#dccfa4") : ((x + y) % 2 ? "#b5d589" : "#9fc86e");
+      ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+    }
+  }
+  for (const room of layout.rooms) {
+    ctx.fillStyle = room.floor || "#e5c896";
+    ctx.fillRect(room.x * TILE, room.y * TILE, room.w * TILE, room.h * TILE);
+    ctx.strokeStyle = room.trim || "#8b6f47";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(room.x * TILE + 1, room.y * TILE + 1, room.w * TILE - 2, room.h * TILE - 2);
+    ctx.fillStyle = room.trim || "#8b6f47";
+    ctx.fillRect(room.x * TILE, room.y * TILE, room.w * TILE, 8);
+    ctx.fillStyle = "#fff8e7";
+    ctx.font = "5px monospace";
+    ctx.fillText(room.name, room.x * TILE + 3, room.y * TILE + 6);
+  }
+}
+
 class Avatar {
   constructor(deskKey) {
-    const desk = DESKS[deskKey];
+    const desk = getDesks()[deskKey];
     const p = tileToPx(desk.tile);
     this.deskKey = deskKey;
     this.agent = desk.agent;
@@ -354,7 +310,7 @@ class Avatar {
 
   walkTo(tile) {
     this.path = findPath(this.tile(), tile).slice(1);
-    if (this.path.length) this.status = this.work ? "walk" : "walk";
+    if (this.path.length) this.status = "walk";
   }
 
   assignWork(run) {
@@ -385,7 +341,7 @@ class Avatar {
         this.path.shift();
         if (!this.path.length) {
           this.status = this.work ? "work" : "idle";
-          if (!this.work) this.facing = DESKS[this.deskKey].face || "down";
+          if (!this.work) this.facing = getDesks()[this.deskKey].face || "down";
         }
         return;
       }
@@ -399,7 +355,7 @@ class Avatar {
     if (this.work) {
       this.status = this.work.needs_human ? "think" : "work";
       this.thought = thoughtFor(this.work);
-      this.facing = DESKS[this.deskKey].face || "down";
+      this.facing = getDesks()[this.deskKey].face || "down";
       return;
     }
     this.idleIn -= dt;
@@ -410,7 +366,8 @@ class Avatar {
       return;
     }
     if (this.idleIn <= 0) {
-      const spot = WANDER[Math.floor(Math.random() * WANDER.length)];
+      const spots = layout.wander;
+      const spot = spots[Math.floor(Math.random() * spots.length)];
       this.walkTo(spot);
       this.thought = QUIPS.idle[Math.floor(Math.random() * QUIPS.idle.length)];
       this.linger = 1.6 + Math.random() * 2.2;
@@ -429,20 +386,81 @@ export class OfficeFloor {
     this.runs = new Map();
     this.envelopes = [];
     this.avatars = {};
-    for (const key of Object.keys(DESKS)) {
-      this.avatars[DESKS[key].agent] = new Avatar(key);
-    }
     this.lastDesk = {};
     this.t = 0;
     this.hover = null;
+    this.themeSource = "procedural";
+    this.ready = false;
+    this._pendingSnapshot = null;
+    this.booted = Promise.resolve();
     canvas.addEventListener("click", (ev) => this._click(ev));
     canvas.addEventListener("mousemove", (ev) => this._hover(ev));
+    this.booted = this._boot();
     requestAnimationFrame((now) => this._tick(now));
   }
 
+  async _boot() {
+    try {
+      const packed = await loadTiledOffice();
+      if (packed) {
+        const below = prerenderLayers(packed.map, packed.tilesets, ["floor", "walls", "furniture-below"]);
+        const above = prerenderLayers(packed.map, packed.tilesets, ["furniture-above"]);
+        applyTiledLayout({ ...packed, below, above });
+      }
+    } catch (err) {
+      console.warn("LimeZu tileset unavailable; using procedural floor", err);
+    }
+    this.themeSource = layout.source;
+    this._rebuildAvatars();
+    this._resize();
+    this.ready = true;
+    if (this._pendingSnapshot) {
+      const queued = this._pendingSnapshot;
+      this._pendingSnapshot = null;
+      this.applySnapshot(queued);
+    }
+    this._announceTheme();
+  }
+
+  _announceTheme() {
+    const legend = document.querySelector("[data-testid='floor-legend']");
+    if (legend && layout.source === "limezu") {
+      legend.textContent = "LimeZu interiors · click an avatar, envelope, or desk · gold thought = live work";
+    }
+    const credit = document.getElementById("limezu-credit");
+    if (credit) {
+      credit.hidden = layout.source !== "limezu";
+    }
+    window.__MAILROOM__ = {
+      theme: layout.source,
+      desktop: Boolean(window.mailroomDesktop?.isDesktop),
+      desks: Object.keys(getDesks()),
+      cols: layout.cols,
+      rows: layout.rows,
+    };
+  }
+
+  _rebuildAvatars() {
+    this.avatars = {};
+    for (const key of Object.keys(getDesks())) {
+      this.avatars[getDesks()[key].agent] = new Avatar(key);
+    }
+  }
+
+  _resize() {
+    this.canvas.width = layout.cols * TILE * SCALE;
+    this.canvas.height = layout.rows * TILE * SCALE;
+    this.canvas.dataset.theme = layout.source;
+  }
+
   applySnapshot(runs) {
+    if (!this.ready) {
+      this._pendingSnapshot = runs;
+      return;
+    }
     const seen = new Set();
     const busy = {};
+    const desks = getDesks();
     for (const run of runs) {
       seen.add(run.doc_id);
       const prev = this.runs.get(run.doc_id);
@@ -456,7 +474,7 @@ export class OfficeFloor {
       this.lastDesk[run.doc_id] = desk;
       const active = run.stage !== "archived" && run.stage !== "failed";
       if (active) {
-        const agent = DESKS[desk]?.agent;
+        const agent = desks[desk]?.agent;
         if (agent) busy[agent] = run;
       }
     }
@@ -493,11 +511,12 @@ export class OfficeFloor {
       this.applySnapshot([run, ...[...this.runs.values()].filter((r) => r.doc_id !== run.doc_id)]);
     }
     if (event.type === "hive") {
-      const fromDesk = Object.values(DESKS).find((d) => d.agent === event.from);
-      const toDesk = Object.values(DESKS).find((d) => d.agent === event.to);
+      const desks = Object.values(getDesks());
+      const fromDesk = desks.find((d) => d.agent === event.from);
+      const toDesk = desks.find((d) => d.agent === event.to);
       if (toDesk) {
         this.envelopes.push({
-          from: fromDesk ? fromDesk.tile : ENTRANCE,
+          from: fromDesk ? fromDesk.tile : layout.entrance,
           to: toDesk.tile,
           t: 0,
           dur: 0.9,
@@ -516,8 +535,9 @@ export class OfficeFloor {
   }
 
   _fly(fromKey, toKey, run) {
-    const from = fromKey ? DESKS[fromKey]?.tile : ENTRANCE;
-    const to = DESKS[toKey]?.tile || ENTRANCE;
+    const desks = getDesks();
+    const from = fromKey ? desks[fromKey]?.tile : layout.entrance;
+    const to = desks[toKey]?.tile || layout.entrance;
     this.envelopes.push({
       from,
       to,
@@ -542,48 +562,45 @@ export class OfficeFloor {
     requestAnimationFrame((n) => this._tick(n));
   }
 
+  _drawMonitors(ctx) {
+    const tiled = layout.tiled;
+    if (!tiled) return;
+    for (const desk of Object.values(getDesks())) {
+      const working = Boolean(this.avatars[desk.agent]?.work);
+      if (!working || !desk.monitor) continue;
+      for (const [gid, dx, dy] of tiled.monitorOn) {
+        blitGid(ctx, tiled.tilesets, gid, (desk.monitor[0] + dx) * TILE, (desk.monitor[1] + dy) * TILE);
+      }
+    }
+  }
+
   draw() {
     const ctx = this.ctx;
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
-    ctx.fillStyle = "#7aa35a";
-    ctx.fillRect(0, 0, COLS * TILE, ROWS * TILE);
+    ctx.clearRect(0, 0, layout.cols * TILE, layout.rows * TILE);
 
-    for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        const path = (x >= 10 && x <= 29 && y >= 8 && y <= 16) || y >= 21;
-        ctx.fillStyle = path ? ((x + y) % 2 ? "#e8d8b0" : "#dccfa4") : ((x + y) % 2 ? "#b5d589" : "#9fc86e");
-        ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
-      }
+    if (layout.tiled?.below) {
+      ctx.drawImage(layout.tiled.below, 0, 0);
+    } else {
+      drawProceduralGround(ctx);
+      drawFurniture(ctx);
+      const door = tileToPx(layout.entrance);
+      ctx.fillStyle = "#6e1423";
+      ctx.fillRect(door.x - 10, door.y - 6, 20, 12);
+      ctx.fillStyle = "#f4d35e";
+      ctx.fillRect(door.x - 8, door.y - 4, 16, 8);
     }
 
-    for (const room of ROOMS) {
-      ctx.fillStyle = room.floor;
-      ctx.fillRect(room.x * TILE, room.y * TILE, room.w * TILE, room.h * TILE);
-      ctx.strokeStyle = room.trim;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(room.x * TILE + 1, room.y * TILE + 1, room.w * TILE - 2, room.h * TILE - 2);
-      ctx.fillStyle = room.trim;
-      ctx.fillRect(room.x * TILE, room.y * TILE, room.w * TILE, 8);
-      ctx.fillStyle = "#fff8e7";
-      ctx.font = "5px monospace";
-      ctx.fillText(room.name, room.x * TILE + 3, room.y * TILE + 6);
-    }
+    if (layout.source === "limezu") drawRoomPlates(ctx);
 
-    drawFurniture(ctx);
-
-    const door = tileToPx(ENTRANCE);
-    ctx.fillStyle = "#6e1423";
-    ctx.fillRect(door.x - 10, door.y - 6, 20, 12);
-    ctx.fillStyle = "#f4d35e";
-    ctx.fillRect(door.x - 8, door.y - 4, 16, 8);
-
-    for (const [key, desk] of Object.entries(DESKS)) {
+    for (const [key, desk] of Object.entries(getDesks())) {
       const working = Boolean(this.avatars[desk.agent]?.work);
-      drawDeskSet(ctx, desk, working);
-      if (this.hover === key) {
+      if (layout.source !== "limezu") drawDeskSet(ctx, desk, working);
+      if (this.hover === key || working) {
         const p = tileToPx(desk.tile);
-        ctx.strokeStyle = "#f4d35e";
+        ctx.strokeStyle = working ? "#f4d35e" : "#fff8e7";
+        ctx.lineWidth = 1;
         ctx.strokeRect(p.x - 10, p.y - 18, 20, 26);
       }
     }
@@ -616,6 +633,11 @@ export class OfficeFloor {
       ctx.stroke();
     }
 
+    if (layout.tiled?.above) {
+      ctx.drawImage(layout.tiled.above, 0, 0);
+      this._drawMonitors(ctx);
+    }
+
     let lift = 0;
     const bubbles = people.filter((a) => a.thought && (a.status === "work" || a.status === "think" || a.status === "walk"));
     bubbles.sort((a, b) => a.x - b.x);
@@ -628,13 +650,13 @@ export class OfficeFloor {
 
   _pos(ev) {
     const rect = this.canvas.getBoundingClientRect();
-    const x = ((ev.clientX - rect.left) / rect.width) * COLS * TILE;
-    const y = ((ev.clientY - rect.top) / rect.height) * ROWS * TILE;
+    const x = ((ev.clientX - rect.left) / rect.width) * layout.cols * TILE;
+    const y = ((ev.clientY - rect.top) / rect.height) * layout.rows * TILE;
     return { x, y };
   }
 
   _hitDesk(x, y) {
-    for (const [key, desk] of Object.entries(DESKS)) {
+    for (const [key, desk] of Object.entries(getDesks())) {
       const p = tileToPx(desk.tile);
       if (Math.abs(x - p.x) < 12 && Math.abs(y - p.y) < 16) return key;
     }
@@ -678,7 +700,7 @@ export class OfficeFloor {
     }
     const deskKey = this._hitDesk(x, y);
     if (!deskKey) return;
-    const desk = DESKS[deskKey];
+    const desk = getDesks()[deskKey];
     const run = [...this.runs.values()].find((r) => r.desk === deskKey);
     this.onSelect(run || { desk: deskKey, agent: desk.agent, filename: desk.label });
   }

@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, stamp_color
+from agent_mailroom.llm.providers import provider_status
+from agent_mailroom.office_theme import tileset_status
 from agent_mailroom.hive.mailbox import list_inbox, roster_status
 from agent_mailroom.pipeline.bins import enqueue_inbox, inbox_pending, review_dir
 from agent_mailroom.pipeline.events import recent
@@ -75,12 +77,15 @@ def health() -> dict[str, Any]:
         "review_resolve": True,
         "inbox_upload": True,
         "checks": {
-            "llm_provider": os.environ.get("MAILROOM_LLM_PROVIDER", "mock"),
+            "llm_provider": provider_status()["active"],
+            "llm": provider_status(),
             "database": True,
             "watcher": lamp,
             "watcher_embedded": watch["running"],
             "inbox_pending": watch["inbox_pending"],
             "watcher_heartbeat_seconds_ago": watch["heartbeat_age"],
+            "tilesets": tileset_status(),
+            "desktop": os.environ.get("MAILROOM_DESKTOP") == "1",
         },
     }
 
@@ -120,7 +125,8 @@ def ops_status(authorization: str | None = Header(default=None)) -> dict[str, An
         "review_queue": len(review),
         "stuck_documents": stuck,
         "hive": _hive_stats(),
-        "llm_provider": os.environ.get("MAILROOM_LLM_PROVIDER", "mock"),
+        "llm_provider": provider_status()["active"],
+        "llm": provider_status(),
         "sync": os.environ.get("MAILROOM_SYNC") == "1",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -444,6 +450,56 @@ def finish_topic(topic_id: str, authorization: str | None = Header(default=None)
 class DemoBody(BaseModel):
     sample: str = Field(default="all")
     matter_id: str = "DEMO"
+
+
+class HubPullBody(BaseModel):
+    corpus: str = "docclass-pilot"
+    limit: int = 5
+    offset: int = 0
+    config: str | None = None
+    split: str | None = None
+    matter_id: str = "HUB"
+
+
+@router.get("/providers")
+def providers(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    return provider_status()
+
+
+@router.get("/datasets")
+def datasets(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    from agent_mailroom.pipeline.hf_corpora import CORPORA, ORG, pipeline_corpora
+
+    return {
+        "org": ORG,
+        "corpora": list(CORPORA.values()),
+        "pipeline": pipeline_corpora(),
+    }
+
+
+@router.post("/datasets/pull")
+def datasets_pull(body: HubPullBody | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    from agent_mailroom.pipeline.hub import pull_corpus
+
+    body = body or HubPullBody()
+    try:
+        return pull_corpus(
+            body.corpus,
+            limit=body.limit,
+            offset=body.offset,
+            config=body.config,
+            split=body.split,
+            matter_id=body.matter_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"hub pull failed: {exc}") from exc
 
 
 @router.post("/demo")

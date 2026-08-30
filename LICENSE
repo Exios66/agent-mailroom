@@ -23,9 +23,10 @@ SOFTWARE.
 ---
 
 Scope note. This license covers original source code in this repository.
-The visual system is original pixel art and procedural sprites. It is not
-the LimeZu Modern Interiors tileset used by Munder Difflin, and those
-tilesets are not bundled here.
+LimeZu Modern Interiors tilesets under `office/tiles/` are **not** MIT.
+They ship under LimeZu's Complete Version licence (`office/tiles/LIMEZUASSETS-LICENSE.txt`)
+and require credit to https://limezu.itch.io/. Walking avatars, thought clouds,
+and envelopes remain original procedural pixels.
 
 Agent Mailroom is an affectionate hybrid of the llm-mailroom pipeline and a
 Dunder-Mifflin-style office floor. It is not affiliated with NBC's The Office

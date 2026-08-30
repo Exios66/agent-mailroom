@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-mailroom"
 version = "0.1.0"
-description = "Self-contained legal-document mailroom pipeline with a Dunder Mifflin office floor"
+description = "The Mailroom — llm-mailroom pipeline on a walking office floor"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
