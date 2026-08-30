@@ -7,8 +7,8 @@
   <title>The Mailroom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom5">
-  <link rel="stylesheet" href="/office/css/office.css?v=mailroom5">
+  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom6">
+  <link rel="stylesheet" href="/office/css/office.css?v=mailroom6">
   <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
 </head>
 <body>
@@ -25,6 +25,7 @@
       <button data-tab="topics" data-testid="tab-topics">Topics</button>
       <button data-tab="hive" data-testid="tab-hive">Hive</button>
       <button data-tab="metrics" data-testid="tab-metrics">Metrics</button>
+      <button data-tab="history" data-testid="tab-history">History</button>
       <button data-tab="console" data-testid="tab-console">Console</button>
     </nav>
     <button class="action" id="brief-btn" data-testid="brief-btn">Brief floor</button>
@@ -124,6 +125,12 @@
         <section class="view" id="view-metrics">
           <div id="metrics"></div>
         </section>
+        <section class="view" id="view-history">
+          <div class="row" style="margin-bottom:10px">
+            <button id="history-refresh" class="action" data-testid="history-refresh">Refresh history</button>
+          </div>
+          <div id="history-list" data-testid="history-list"></div>
+        </section>
         <section class="view" id="view-console">
           <div id="console-log"></div>
         </section>
@@ -139,6 +146,6 @@
     <a id="limezu-credit" data-testid="limezu-credit" hidden href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">Tiles: LimeZu</a>
   </footer>
 
-  <script type="module" src="/office/js/app.js?v=mailroom5"></script>
+  <script type="module" src="/office/js/app.js?v=mailroom6"></script>
 </body>
 </html>

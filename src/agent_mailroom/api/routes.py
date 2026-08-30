@@ -11,6 +11,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_mailroom.api.present import document_view, floor_bins, floor_run, read_source_text
+from agent_mailroom.observability.field_scoring import list_scores, metrics_summary
+from agent_mailroom.observability.spans import list_spans
+from agent_mailroom.observability.trace_cache import load_floor, load_run, persist_floor, persist_run
+from agent_mailroom.observability.tracing import flush_health, resolve_provider_name
 from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, taxonomy
 from agent_mailroom.llm.providers import provider_status
 from agent_mailroom.office_theme import tileset_status
@@ -106,6 +110,8 @@ def health() -> dict[str, Any]:
             "desktop": os.environ.get("MAILROOM_DESKTOP") == "1",
             "judge_verify": judge_enabled(),
             "auth_required": bool(os.environ.get("MAILROOM_API_TOKEN", "").strip()),
+            "operator_auth": os.environ.get("MAILROOM_OPERATOR_AUTH", "0").strip().lower() in ("1", "true", "on", "yes"),
+            "observability": flush_health(),
         },
     }
 
@@ -413,6 +419,8 @@ def inspect_document(doc_id: str, authorization: str | None = Header(default=Non
         "audit": {"chain_valid": valid, "chain_length": len(entries), "entries": entries},
         "source": source_payload,
         "conflict": view.get("conflict_detail"),
+        "spans": list_spans(doc_id),
+        "field_scores": list_scores(doc_id),
     }
 
 
@@ -435,7 +443,7 @@ def floor() -> dict[str, Any]:
     docs = list_documents(80)
     runs = [floor_run(row) for row in docs]
     trays = floor_bins(runs)
-    return {
+    payload = {
         "count": len(runs),
         "runs": runs,
         "roster": agent_roster(),
@@ -445,6 +453,68 @@ def floor() -> dict[str, Any]:
         "reconsider": sum(1 for run in runs if run.get("needs_reconsideration")),
         "failed": trays["failed"]["count"],
         "archived": trays["archive"]["count"],
+        "observability_provider": resolve_provider_name(),
+    }
+    persist_floor(runs)
+    return payload
+
+
+@router.get("/history")
+def history(limit: int = 200, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    cached = load_floor()
+    docs = list_documents(min(max(limit, 1), 500))
+    runs = [floor_run(row) for row in docs]
+    if not runs and cached:
+        runs = cached.get("runs") or []
+    for run in runs[:20]:
+        persist_run(run["trace_id"], {"run": run, "spans": list_spans(run["trace_id"])})
+    return {
+        "count": len(runs),
+        "source": "pipeline" if docs else (cached or {}).get("source", "pipeline"),
+        "observability_provider": resolve_provider_name(),
+        "runs": runs,
+    }
+
+
+@router.get("/runs/{doc_id}")
+def run_detail(doc_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    row = get_document(doc_id)
+    if not row:
+        cached = load_run(doc_id)
+        if cached:
+            return cached
+        raise HTTPException(status_code=404, detail="unknown document")
+    run = floor_run(row)
+    payload = {
+        "trace_id": doc_id,
+        "run": run,
+        "spans": list_spans(doc_id),
+        "field_scores": list_scores(doc_id),
+        "routing_path": run.get("routing_path") or [],
+        "updated_at": row.get("updated_at"),
+        "created_at": row.get("created_at"),
+    }
+    persist_run(doc_id, payload)
+    return payload
+
+
+@router.get("/metrics")
+def metrics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
+    docs = list_documents(500)
+    runs = [floor_run(row) for row in docs]
+    stages: dict[str, int] = {}
+    for run in runs:
+        stage = str(run.get("stage") or "unknown")
+        stages[stage] = stages.get(stage, 0) + 1
+    return {
+        "documents": len(runs),
+        "stages": stages,
+        "field_scoring": metrics_summary(),
+        "observability": flush_health(),
+        "bins": floor_bins(runs),
     }
 
 
@@ -472,7 +542,9 @@ def meta() -> dict[str, Any]:
         "agents": agent_roster(),
         "dispositions": ["resume", "record", "requeue", "complete"],
         "auth_required": bool(os.environ.get("MAILROOM_API_TOKEN", "").strip()),
+        "operator_auth": os.environ.get("MAILROOM_OPERATOR_AUTH", "0").strip().lower() in ("1", "true", "on", "yes"),
         "judge_verify": judge_enabled(),
+        "observability_provider": resolve_provider_name(),
     }
 
 

@@ -1,6 +1,7 @@
-import { OfficeFloor } from "./floor.js?v=mailroom5";
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom5";
-import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=mailroom5";
+import { OfficeFloor } from "./floor.js?v=mailroom6";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom6";
+import { connectWS, getJSON, postJSON, uploadFile } from "./api.js?v=mailroom6";
+import { HistoryView } from "./history.js?v=mailroom6";
 
 const inspect = document.getElementById("inspect");
 const reviewList = document.getElementById("review-list");
@@ -15,6 +16,7 @@ const floor = new OfficeFloor(document.getElementById("floor"), (item) => {
   else switchTab("floor");
   showInspect(item);
 });
+window.__MAILROOM_FLOOR__ = floor;
 const logLines = [];
 
 function showInspect(item) {
@@ -25,7 +27,14 @@ function showInspect(item) {
   renderInspectCard(item);
   if (item.doc_id) {
     getJSON(`/v1/inspect/${item.doc_id}`).then((payload) => {
-      renderInspectCard({ ...item, ...payload.document, _audit: payload.audit, _source: payload.source, _conflict: payload.conflict });
+      renderInspectCard({
+        ...item,
+        ...payload.document,
+        _audit: payload.audit,
+        _source: payload.source,
+        _conflict: payload.conflict,
+        _spans: payload.spans,
+      });
     }).catch(() => {});
   }
 }
@@ -51,6 +60,10 @@ function renderInspectCard(item) {
   const fields = item.extracted_data
     ? `<pre>${escapeHtml(JSON.stringify(item.extracted_data, null, 2))}</pre>`
     : "";
+  const spans = (item._spans || []).map((span) =>
+    `<li><b>${escapeHtml(span.name)}</b> ${Number(span.latency_ms || 0).toFixed(0)}ms</li>`
+  ).join("");
+  const spanBlock = spans ? `<details class="card"><summary>Trace spans</summary><ol class="audit">${spans}</ol></details>` : "";
   const audit = item._audit
     ? `<p class="muted">Audit ${item._audit.chain_valid ? "valid" : "BROKEN"} · ${item._audit.chain_length} links</p>
        <ol class="audit">${(item._audit.entries || []).slice(-8).map((e) =>
@@ -75,6 +88,7 @@ function renderInspectCard(item) {
       ${conflict}
       ${item.report ? `<p>${escapeHtml(item.report)}</p>` : ""}
       ${fields}
+      ${spanBlock}
       ${audit}
       ${source}
       ${pile ? `<div class="tray-pile">${pile}</div>` : ""}
@@ -112,13 +126,23 @@ function switchTab(name) {
     topics: "Live Topics",
     hive: "Hive Mailboxes",
     metrics: "Floor Metrics",
+    history: "Run History",
     console: "Live Console",
   }[name];
 }
 
 document.getElementById("tabs").addEventListener("click", (ev) => {
   const btn = ev.target.closest("button");
-  if (btn) switchTab(btn.dataset.tab);
+  if (!btn?.dataset.tab) return;
+  switchTab(btn.dataset.tab);
+  if (btn.dataset.tab === "history") HistoryView.refresh().catch(() => {});
+});
+
+window.addEventListener("mailroom:inspect", (ev) => {
+  const docId = ev.detail?.doc_id;
+  if (!docId) return;
+  switchTab("floor");
+  showInspect({ doc_id: docId, filename: docId });
 });
 
 document.getElementById("demo-btn").addEventListener("click", async () => {

@@ -1,4 +1,4 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom5";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom6";
 import {
   TILE,
   SCALE,
@@ -10,8 +10,8 @@ import {
   tileToPx,
   getDesks,
   getBins,
-} from "./layout.js?v=mailroom5";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom5";
+} from "./layout.js?v=mailroom6";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom6";
 
 export { TILE, SCALE, deskForRun, binForRun, tileToPx, getDesks, getBins };
 
@@ -442,6 +442,8 @@ export class OfficeFloor {
     this.themeSource = "procedural";
     this.ready = false;
     this._pendingSnapshot = null;
+    this.replayTimers = [];
+    this.errandSpot = [21, 10];
     this.booted = Promise.resolve();
     canvas.addEventListener("click", (ev) => this._click(ev));
     canvas.addEventListener("mousemove", (ev) => this._hover(ev));
@@ -629,6 +631,7 @@ export class OfficeFloor {
     for (const env of this.envelopes) env.t += dt / env.dur;
     this.envelopes = this.envelopes.filter((e) => e.t < 1.15);
     for (const avatar of Object.values(this.avatars)) avatar.step(dt);
+    if (Math.random() < dt * 0.02) this._spawnErrand();
     this.draw();
     requestAnimationFrame((n) => this._tick(n));
   }
@@ -804,5 +807,72 @@ export class OfficeFloor {
     const desk = getDesks()[deskKey];
     const run = [...this.runs.values()].find((r) => r.desk === deskKey && !r.tray);
     this.onSelect(run || { desk: deskKey, agent: desk.agent, filename: desk.label });
+  }
+
+  clearReplayTimers() {
+    for (const timer of this.replayTimers) clearTimeout(timer);
+    this.replayTimers = [];
+  }
+
+  replay(runData) {
+    this.clearReplayTimers();
+    const replayId = runData.trace_id || runData.doc_id;
+    if (!replayId) return;
+    const spanToStage = {
+      "ingest-document": "ingest",
+      "classify-document": "classify",
+      "extract-fields": "extract",
+      "judge-verify": "judge_verify",
+      "arbitrate-verdict": "arbiter",
+      "compile-report": "report",
+      "archive-document": "archived",
+    };
+    let sequence = (runData.routing_path || []).slice();
+    const spans = runData.spans || [];
+    if (spans.length) {
+      sequence = spans
+        .map((span) => spanToStage[span.name] || span.name)
+        .filter(Boolean);
+    }
+    if (!sequence.length) sequence = ["ingest", "classify", "extract", "archive", "archived"];
+    const baseRun = {
+      doc_id: replayId,
+      trace_id: replayId,
+      filename: runData.filename,
+      doc_type: runData.doc_type,
+      stage: sequence[0],
+      routing_path: sequence,
+    };
+    this.runs.set(replayId, { ...baseRun, desk: deskForRun(baseRun) });
+    let delay = 0;
+    for (const stage of sequence) {
+      const timer = setTimeout(() => {
+        const current = this.runs.get(replayId);
+        if (!current) return;
+        current.stage = stage;
+        current.desk = deskForRun(current);
+        this.runs.set(replayId, current);
+      }, delay);
+      this.replayTimers.push(timer);
+      const span = spans.find((row) => (spanToStage[row.name] || row.name) === stage);
+      delay += Math.min(1800, Math.max(350, Number(span?.latency_ms || 600)));
+    }
+    const endTimer = setTimeout(() => {
+      const current = this.runs.get(replayId);
+      if (current) {
+        current.stage = runData.stage || "archived";
+        this.runs.set(replayId, current);
+      }
+    }, delay + 400);
+    this.replayTimers.push(endTimer);
+  }
+
+  _spawnErrand() {
+    const idle = Object.values(this.avatars).filter((a) => !a.work && a.status === "idle");
+    if (!idle.length) return;
+    const avatar = idle[Math.floor(Math.random() * idle.length)];
+    avatar.thought = Math.random() > 0.5 ? "coffee run" : "errand";
+    avatar.walkTo(this.errandSpot);
+    avatar.linger = 2.2;
   }
 }

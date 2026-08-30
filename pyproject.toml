@@ -22,6 +22,11 @@ dependencies = [
 
 [project.optional-dependencies]
 pdf = ["pypdf>=4.0"]
+vision = ["pymupdf>=1.24"]
+observability = ["langfuse>=3.0"]
+phoenix = ["arize-phoenix>=4.0"]
+tui = ["rich>=13.0"]
+auth = ["pyjwt>=2.8", "bcrypt>=4.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -30,6 +35,7 @@ dev = [
 
 [project.scripts]
 agent-mailroom = "agent_mailroom.__main__:main"
+mailroom-tui = "agent_mailroom.tui.mailroom_console:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

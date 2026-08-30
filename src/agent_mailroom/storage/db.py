@@ -69,6 +69,31 @@ CREATE TABLE IF NOT EXISTS topics (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_topics_status ON topics(status);
+
+CREATE TABLE IF NOT EXISTS pipeline_spans (
+    span_id TEXT PRIMARY KEY,
+    doc_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    observation_type TEXT DEFAULT 'span',
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    latency_ms REAL,
+    input_json TEXT,
+    output_json TEXT,
+    seq INTEGER NOT NULL,
+    FOREIGN KEY (doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_spans_doc ON pipeline_spans(doc_id, seq);
+
+CREATE TABLE IF NOT EXISTS field_scores (
+    doc_id TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    score REAL,
+    method TEXT,
+    detail TEXT,
+    scored_at TEXT NOT NULL,
+    PRIMARY KEY (doc_id, field_name)
+);
 """
 
 

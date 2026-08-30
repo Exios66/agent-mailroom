@@ -34,6 +34,7 @@ class RunState:
     resume_extraction: bool = False
     halt: bool = False
     terminal: str | None = None
+    doc_pages: list[str] = field(default_factory=list)
 
     def snapshot(self) -> dict[str, Any]:
         return {

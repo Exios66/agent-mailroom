@@ -1,0 +1,1 @@
+"""Mailroom terminal console."""

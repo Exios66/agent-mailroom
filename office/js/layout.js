@@ -1,4 +1,4 @@
-import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom5";
+import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom6";
 
 export const TILE = 16;
 export const SCALE = 2;
