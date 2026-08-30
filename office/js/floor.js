@@ -243,9 +243,9 @@ function drawAvatar(ctx, character, px, py, status, facing, phase) {
 function drawBubble(ctx, px, py, text, lift) {
   if (!text) return;
   const label = text.length > 22 ? `${text.slice(0, 21)}…` : text;
-  ctx.font = "5px monospace";
-  const w = Math.max(28, label.length * 3 + 6);
-  const h = 9;
+  ctx.font = "6px monospace";
+  const w = Math.max(32, label.length * 3.4 + 8);
+  const h = 11;
   const x = Math.round(Math.max(2, Math.min(COLS * TILE - w - 2, px - w / 2)));
   const y = Math.round(Math.max(2, py - 24 - lift));
   ctx.fillStyle = "#1a1320";

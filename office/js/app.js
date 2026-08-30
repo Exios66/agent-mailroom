@@ -10,7 +10,10 @@ const consoleLog = document.getElementById("console-log");
 const counts = document.getElementById("counts");
 const providerEl = document.getElementById("provider");
 
-const floor = new OfficeFloor(document.getElementById("floor"), showInspect);
+const floor = new OfficeFloor(document.getElementById("floor"), (item) => {
+  switchTab("floor");
+  showInspect(item);
+});
 const logLines = [];
 
 function showInspect(item) {
