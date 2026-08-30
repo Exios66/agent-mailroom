@@ -7,8 +7,8 @@
   <title>The Mailroom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom6">
-  <link rel="stylesheet" href="/office/css/office.css?v=mailroom6">
+  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom7">
+  <link rel="stylesheet" href="/office/css/office.css?v=mailroom7">
   <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
 </head>
 <body>
@@ -34,6 +34,10 @@
       Upload
       <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx" data-testid="upload">
     </label>
+    <form id="auth-gate" class="auth-gate" hidden data-testid="auth-gate">
+      <input id="auth-token" type="password" placeholder="API token" autocomplete="off" aria-label="API token">
+      <button type="submit" class="action">Unlock</button>
+    </form>
   </header>
 
   <main class="shell">
@@ -111,6 +115,9 @@
           <div id="review-list" data-testid="review-list"></div>
         </section>
         <section class="view" id="view-archive">
+          <div class="row" style="margin-bottom:10px">
+            <label class="check"><input type="checkbox" id="archive-reconsider-only" data-testid="archive-reconsider-only"> Reconsider only</label>
+          </div>
           <div id="archive-list" data-testid="archive-list"></div>
         </section>
         <section class="view" id="view-failed">
@@ -123,7 +130,9 @@
           <div id="hive-list"></div>
         </section>
         <section class="view" id="view-metrics">
+          <div id="providers-panel" data-testid="providers-panel"></div>
           <div id="metrics"></div>
+          <div id="ops-results" data-testid="ops-results"></div>
         </section>
         <section class="view" id="view-history">
           <div class="row" style="margin-bottom:10px">
@@ -146,6 +155,6 @@
     <a id="limezu-credit" data-testid="limezu-credit" hidden href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">Tiles: LimeZu</a>
   </footer>
 
-  <script type="module" src="/office/js/app.js?v=mailroom6"></script>
+  <script type="module" src="/office/js/app.js?v=mailroom7"></script>
 </body>
 </html>

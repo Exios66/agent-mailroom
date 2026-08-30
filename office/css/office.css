@@ -25,6 +25,13 @@ body { display: grid; grid-template-rows: auto 1fr auto; min-height: 100%; }
 }
 .tabs button .badge[hidden] { display: none; }
 .action.primary { background: var(--gold); }
+.auth-gate { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.auth-gate input { width: 140px; padding: 6px 8px; font-size: 11px; border: 2px solid var(--ink-900); }
+.card[data-doc] { cursor: pointer; }
+.card[data-doc]:hover { background: var(--cream-50); }
+.hive-board { white-space: pre-wrap; font-family: var(--font-mono); font-size: 11px; max-height: 200px; overflow: auto; }
+.providers-table { width: 100%; font-size: 11px; border-collapse: collapse; }
+.providers-table th, .providers-table td { border: 1px solid var(--ink-700); padding: 4px 6px; text-align: left; }
 
 .shell { display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-height: 0; height: 100%; }
 .floor-wrap { position: relative; overflow: auto; background: #1a1320; min-height: 0; min-width: 0; }
