@@ -191,7 +191,7 @@ export function applyTiledLayout({ manifest, map, tilesets, below, above }) {
 
 export const STAGE_DESK = {
   inbox: "desk-reception",
-  ingest: "desk-reception",
+  intake: "desk-reception",
   classify: "desk-reception",
   retry_classify: "desk-reception-2",
   review_classify: "desk-reception-2",

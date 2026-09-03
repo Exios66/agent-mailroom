@@ -70,7 +70,7 @@ const QUIPS = {
     catalog_write: "cataloging",
     archive: "filing it away",
     archived: "filed",
-    ingest: "opening the envelope",
+    intake: "opening the envelope",
     inbox: "new mail",
   },
 };
@@ -888,7 +888,7 @@ export class OfficeFloor {
     const replayId = runData.trace_id || runData.doc_id;
     if (!replayId) return;
     const spanToStage = {
-      "ingest-document": "ingest",
+      "intake-document": "intake",
       "classify-document": "classify",
       "extract-fields": "extract",
       "judge-verify": "judge_verify",
@@ -903,7 +903,7 @@ export class OfficeFloor {
         .map((span) => spanToStage[span.name] || span.name)
         .filter(Boolean);
     }
-    if (!sequence.length) sequence = ["ingest", "classify", "extract", "archive", "archived"];
+    if (!sequence.length) sequence = ["intake", "classify", "extract", "archive", "archived"];
     const baseRun = {
       doc_id: replayId,
       trace_id: replayId,

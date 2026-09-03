@@ -15,7 +15,7 @@ Uploads, demo piles, and filing-like topics **only write the inbox** (plus a `.m
 upload / demo / topic ingest / drop
     │
     ▼
-inbox bin + sidecar ──► watcher claim ──► ingest ──► sorter (Pam)
+inbox bin + sidecar ──► watcher claim ──► intake ──► sorter (Pam)
                  │
                  ├── high confidence ──► specialist desk (Dwight / Angela / Jim / Toby / Meredith)
                  ├── medium band ──► Kelly second opinion ──► extract or review

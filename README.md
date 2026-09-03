@@ -19,7 +19,7 @@ A self-contained legal-document mailroom: one state machine per document, specia
 
 | Feature | Description |
 |:---|:---|
-| **Core pipeline** | ingest → classify → extract → judge → report → archive. Happy path: **two LLM calls** |
+| **Core pipeline** | intake → classify → extract → judge → report → archive. Happy path: **two LLM calls** |
 | **Six live doc classes** | `contract`, `merger_agreement`, `corporate_record`, `correspondence`, `compliance_filing`, `insurance_claim` |
 | **Pared extraction** | CUAD/MAUD/insurance checklists + semantic trio (`intent` / `subject_matter` / `keywords`) |
 | **Inbox watcher** | txt / md / pdf / docx land in the inbox; the watcher claims each file once |
@@ -151,7 +151,7 @@ office/               pixel floor + mailroom desks (vanilla JS, no build step)
 office/tiles/         LimeZu atlases, Tiled map, licence + attribution
 electron/             hardened desktop shell (optional)
 fixtures/samples/     HarborPoint demo pile
-tests/                routing, audit, e2e, watcher, ingest, hub, tiles, CSP, API
+tests/                routing, audit, e2e, watcher, intake, hub, tiles, CSP, API
 docs/ARCHITECTURE.md  contracts and data flow
 ```
 
