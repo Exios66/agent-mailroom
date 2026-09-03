@@ -7,7 +7,7 @@ from agent_mailroom.storage.catalog import get_document
 
 def test_resolve_aliases():
     assert resolve_corpus("pilot")["id"] == "Lucius-Morningstar/docclass-pilot"
-    assert resolve_corpus("Lucius-Morningstar/docclass-merged")["slug"] == "docclass-merged"
+    assert resolve_corpus("Lucius-Morningstar/mailroom-corpus")["slug"] == "docclass-merged"
     assert resolve_corpus("claims")["default_class"] == "insurance_claim"
     with pytest.raises(KeyError):
         resolve_corpus("not-a-corpus")

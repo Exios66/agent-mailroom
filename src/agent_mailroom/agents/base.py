@@ -6,12 +6,11 @@ from agent_mailroom.config.loader import agent_config
 from agent_mailroom.llm.client import LLMError, chat_json
 
 PROMPTS: dict[str, str] = {
-    "sorter": "You are the mailroom sorter. Classify the document into contract, merger_agreement, corporate_record, correspondence, compliance_filing, insurance_claim, or unknown. Return doc_type, contract_subtype, doc_subclass, confidence (0-1), reasoning.",
+    "sorter": "You are the mailroom sorter. Classify the document into contract, merger_agreement, corporate_record, correspondence, insurance_claim, or unknown. Return doc_type, contract_subtype, doc_subclass, confidence (0-1), reasoning.",
     "sorter_reviewer": "You are an independent second-opinion classifier. Ignore any prior label. Return doc_type, confidence, verdict (reviewer_agrees_high|reviewer_agrees_low|reviewer_overrides).",
     "contracts_specialist": "Extract contract fields as JSON matching ContractExtraction (key entities + cuad_clauses/maud_clauses checklists; no open key_obligations).",
     "corporate_records_specialist": "Extract corporate-record fields as JSON matching CorporateRecordExtraction (key entities + intent/subject_matter/keywords).",
     "correspondence_specialist": "Extract correspondence fields as JSON matching CorrespondenceExtraction (key entities + intent/subject_matter/keywords; action_items capped).",
-    "compliance_specialist": "Extract compliance filing fields as JSON matching ComplianceFilingExtraction (slim key entities).",
     "insurance_claims_specialist": "Extract insurance claim fields as JSON matching InsuranceClaimExtraction (key entities + semantic trio + claim_checklist).",
     "judge": "Audit extraction completeness. Return verdict (complete|partial|incomplete), score, findings[].",
     "arbiter": "Resolve a failed judge verdict. Return decision (accept_with_caveats|retry_extraction|human_review) and reasoning.",
