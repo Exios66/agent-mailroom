@@ -13,7 +13,7 @@ _flush_ok = 0
 _flush_failures = 0
 
 NODE_OBSERVATION_TYPES = {
-    "ingest-document": "span",
+    "intake-document": "span",
     "classify-document": "agent",
     "extract-fields": "agent",
     "judge-verify": "evaluator",

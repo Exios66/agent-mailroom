@@ -1,7 +1,7 @@
 import zipfile
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from agent_mailroom.pipeline.ingest import read_document
+from agent_mailroom.pipeline.intake import read_document
 from agent_mailroom.pipeline.runner import run_document
 
 

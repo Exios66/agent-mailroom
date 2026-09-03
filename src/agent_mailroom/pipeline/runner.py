@@ -40,7 +40,7 @@ def _abort_or_park(state: RunState, exc: BaseException, soft_prefix: str) -> Run
     return park_for_review(state)
 
 STAGE_FOR_NODE = {
-    "ingest": "ingest",
+    "intake": "intake",
     "classify": "classify",
     "retry_classify": "retry_classify",
     "review_classify": "retry_classify",
@@ -168,7 +168,7 @@ def _audit(state: RunState, event: str, actor: str, detail: dict | None = None) 
 
 
 STAGE_SPAN = {
-    "ingest": "ingest-document",
+    "intake": "intake-document",
     "classify": "classify-document",
     "retry_classify": "classify-document",
     "review_classify": "classify-document",
@@ -228,9 +228,9 @@ def run_document(
         )
         _audit(state, "ingested", "intake", {"path": str(dest)})
         _persist(state, stage=PipelineStage.PROCESSING)
-        _broadcast(state, "ingest", "intake")
+        _broadcast(state, "intake", "intake")
 
-    node = "extract" if state.resume_extraction else "ingest"
+    node = "extract" if state.resume_extraction else "intake"
     safety = 0
     while node and node != routing.END and safety < 40:
         safety += 1
@@ -238,9 +238,9 @@ def run_document(
         state.routing_path.append(STAGE_FOR_NODE.get(node, node))
         actor = _actor(state, node)
 
-        if node == "ingest":
+        if node == "intake":
             try:
-                state = _run_node(state, node, lambda: nodes.node_ingest(state))
+                state = _run_node(state, node, lambda: nodes.node_intake(state))
             except Exception as exc:
                 classified = classify_run_failure(exc)
                 return fail_document(
@@ -482,6 +482,6 @@ def resume_from_review(doc_id: str, *, doc_type: str | None = None) -> RunState:
         routing_path=list(row.get("routing_path") or []),
         review_decision="approved",
     )
-    nodes.node_ingest(state)
+    nodes.node_intake(state)
     _audit(state, "review_approved", "human", {"doc_type": state.doc_type})
     return run_document(work, matter_id=state.matter_id, resume=state)

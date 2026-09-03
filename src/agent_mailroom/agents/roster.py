@@ -1,5 +1,5 @@
 ACTOR_FOR_NODE = {
-    "ingest": "intake",
+    "intake": "intake",
     "classify": "sorter",
     "retry_classify": "sorter",
     "review_classify": "sorter_reviewer",

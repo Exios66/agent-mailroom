@@ -13,7 +13,7 @@ class RunState:
     file_path: Path
     doc_text: str = ""
     stage: str = "inbox"
-    graph_node: str = "ingest"
+    graph_node: str = "intake"
     doc_type: str | None = None
     contract_subtype: str | None = None
     doc_subclass: str | None = None
