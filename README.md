@@ -8,8 +8,9 @@ A self-contained legal-document mailroom: one state machine per document, specia
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Pipeline](https://img.shields.io/badge/pipeline-llm--mailroom%20v0.6.0-blue)](https://github.com/Exios66/llm-mailroom)
-[![Scoring](https://img.shields.io/badge/scoring-llm--dojo--scoring%20v0.12.1-purple)](https://github.com/Exios66/llm-dojo-scoring)
+[![Pipeline](https://img.shields.io/badge/pipeline-llm--mailroom%20v0.6.0-blue)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
+[![Scoring](https://img.shields.io/badge/scoring-llm--dojo--scoring%20v0.12.1-purple)](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
+[![Contributor](https://img.shields.io/badge/contributor-Exios66-blue)](https://github.com/Exios66)
 
 </div>
 

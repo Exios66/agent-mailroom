@@ -10,10 +10,11 @@ import json
 from typing import Any
 
 ORG = "Lucius-Morningstar"
-# Renamed 2026-09-02 (human directive): Hub repo was docclass-merged,
-# now mailroom-corpus. Internal slug stays docclass-merged (trace-tag
+# Renamed 2026-09-02 (human directive): Hub repo was docclass-merged, then
+# mailroom-corpus (frozen v8); the v9 successor (2026-09-12) is published as
+# mailroom-dataset. Internal slug stays docclass-merged (trace-tag
 # immutability: historical traces carry source-docclass-merged).
-FULL_CORPUS_ID = f"{ORG}/mailroom-corpus"
+FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
 
 HUB_CLASSES: tuple[str, ...] = (
@@ -53,7 +54,7 @@ CORPORA: dict[str, dict[str, Any]] = {
         "default_config": "ground_truth",
         "default_split": "train",
         "source_tag": "source-docclass-pilot",
-        "note": "Stratified slice of mailroom-corpus (formerly docclass-merged) — safest pile for the floor.",
+        "note": "Stratified slice of mailroom-dataset v9 (successor of the frozen v8 mailroom-corpus) — safest pile for the floor.",
     },
     "enron-correspondence-dedup": {
         "slug": "enron-correspondence-dedup",
