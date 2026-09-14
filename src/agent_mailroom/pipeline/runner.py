@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from agent_mailroom.config.loader import specialist_for
 from agent_mailroom.hive.mailbox import deliver
@@ -264,8 +267,10 @@ def run_document(
                     doc_type=state.doc_type or "unknown",
                     filename=state.original_filename,
                 )
-            except OSError:
-                pass
+            except OSError as exc:
+                # hub#63: a failed classified-snapshot copy is invisible to the
+                # audit trail unless surfaced — log it, keep the run moving.
+                logger.warning("classified_copy_failed", extra={"doc_id": state.doc_id, "error": str(exc)})
             _persist(state)
             _broadcast(state, node, actor)
             node = routing.after_classify(state, retry=node == "retry_classify")

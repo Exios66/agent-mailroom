@@ -81,15 +81,14 @@ def classify_run_failure(exc: BaseException) -> dict[str, str]:
 
     try:
         from agent_mailroom.llm.client import is_transient_error
-
-        if is_transient_error(exc):
-            return {
-                "failure_class": LLM_TRANSIENT,
-                "reason": f"{name}: {detail}",
-                "detail": detail,
-            }
-    except Exception:
-        pass
+    except ImportError:  # llm stack unavailable — the heuristic markers below carry on
+        is_transient_error = None
+    if is_transient_error is not None and is_transient_error(exc):
+        return {
+            "failure_class": LLM_TRANSIENT,
+            "reason": f"{name}: {detail}",
+            "detail": detail,
+        }
 
     # Heuristic transient markers when provider helpers are unavailable.
     if any(m in low for m in ("connection reset", "temporarily unavailable", "502", "503")):

@@ -193,8 +193,8 @@ vision:
     - gemini
     - claude-3
 
-# Deterministic field-type-aware scoring via llm-dojo-scoring v0.12.1
-# (same pin as llm-mailroom v0.6.0). Local module is a shim + SQLite glue.
+# Deterministic field-type-aware scoring via llm-dojo-scoring v0.14.0
+# (same pin as llm-mailroom v0.7.0). Local module is a shim + SQLite glue.
 field_scoring:
   ambiguous_band: [0.55, 0.85]
   type_bands:

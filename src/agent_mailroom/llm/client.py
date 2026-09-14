@@ -15,6 +15,41 @@ class LLMError(RuntimeError):
     pass
 
 
+_TRANSIENT_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+_TRANSIENT_MARKERS = ("connection reset", "connection aborted", "temporarily unavailable", "broken pipe")
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """True when ``exc`` looks like a transient provider/transport failure.
+
+    Covers httpx transport errors (connect/read/write timeouts, connection
+    resets, remote protocol errors), retryable HTTP statuses on the exception
+    or its attached response, and the provider-marker fallbacks shared with
+    the pipeline heuristic in ``pipeline.failures``. Restores the intended
+    ``LLM_TRANSIENT`` classification path (hub#46) — the symbol previously
+    did not exist, so every classification silently fell through the
+    except-and-pass import guard to the heuristic markers.
+    """
+    if isinstance(exc, httpx.TransportError):
+        return True
+    status = None
+    for attr in ("status_code", "status"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            status = value
+            break
+    if status is None:
+        response = getattr(exc, "response", None)
+        if response is not None:
+            value = getattr(response, "status_code", None)
+            if isinstance(value, int):
+                status = value
+    if status in _TRANSIENT_STATUS_CODES:
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
 def chat_json(agent: str, system: str, user: str, *, agent_cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     provider, model, info = resolve_harness(agent, agent_cfg)
     if provider.name == "mock":

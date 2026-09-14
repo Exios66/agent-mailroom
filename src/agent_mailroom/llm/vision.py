@@ -64,13 +64,25 @@ def agent_uses_vision(agent_name: str) -> bool:
 
 
 def render_pdf_pages(file_path: Path, cap: int | None = None, dpi: int | None = None) -> list[str]:
+    """Render pages of a PDF to a list of PNG image data-URIs.
+
+    `cap` is the page budget: 0 or None renders **all** pages (no content is
+    ever dropped by the page cap — the document's later pages stay available to
+    vision models). Pass an explicit positive cap to limit the image budget
+    (e.g. a sweep comparing cost/accuracy tradeoffs).
+
+    Returns [] when PyMuPDF is unavailable or the PDF can't be rendered (the
+    pipeline then falls back to text-only for both vision and non-vision agents).
+    """
     if dpi is None:
         dpi = _vision_config()["dpi"]
+
     try:
         import fitz  # PyMuPDF
     except ImportError:
         log.debug("pymupdf_missing")
         return []
+
     try:
         doc = fitz.open(str(file_path))
     except Exception:
@@ -78,21 +90,35 @@ def render_pdf_pages(file_path: Path, cap: int | None = None, dpi: int | None = 
         return []
     try:
         page_count = doc.page_count
+        # cap == 0 (or None) means "ALL pages" — never truncate document content.
         limit = page_count if cap is None or cap <= 0 else min(cap, page_count)
         pages: list[str] = []
-        zoom = dpi / 72.0
-        mat = fitz.Matrix(zoom, zoom)
         for idx in range(limit):
             try:
                 page = doc.load_page(idx)
+                # Render at the configured DPI (scaled to ~1.5x); text density
+                # on legal docs is high, so a crisp raster helps the vision
+                # model read clauses, headings and tables. PNG compresses text
+                # pages well (JPEG is smaller only for photo-like scans, and
+                # adds compression artifacts that hurt OCR-style reading).
+                zoom = dpi / 72.0
+                mat = fitz.Matrix(zoom, zoom)
                 pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-                uri = "data:image/png;base64," + base64.b64encode(pix.tobytes("png")).decode("ascii")
+                png = pix.tobytes("png")
+                uri = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
                 pages.append(uri)
             except Exception:
                 log.exception("pdf_page_render_failed", extra={"page": idx})
-        return pages
-    finally:
         doc.close()
+        log.info(
+            "pdf_pages_rendered",
+            extra={"file": file_path.name, "pages": len(pages), "total": page_count,
+                   "cap": (None if cap is None or cap <= 0 else cap)},
+        )
+        return pages
+    except Exception:
+        log.exception("pdf_render_failed_for_vision", extra={"file": str(file_path)})
+        return []
 
 
 def render_image(file_path: Path) -> list[str]:

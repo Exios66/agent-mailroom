@@ -1,7 +1,7 @@
-"""Field scoring — compatibility shim over ``llm-dojo-scoring`` v0.12.1.
+"""Field scoring — compatibility shim over ``llm-dojo-scoring`` v0.14.0.
 
-Pinned to the same release as llm-mailroom v0.6.0
-(``llm-dojo-scoring @ git+…@v0.12.1``). Core scoring lives in the package;
+Pinned to the same release as llm-mailroom v0.7.0
+(``llm-dojo-scoring @ git+…@v0.14.0``). Core scoring lives in the package;
 this module keeps Agent Mailroom glue:
 
 - taxonomy → ``configure()`` wiring
@@ -27,43 +27,25 @@ from agent_mailroom.storage.db import connect, init_db, locked
 
 
 def _apply_taxonomy_settings() -> None:
-    """Map ``taxonomy.yaml`` ``field_scoring:`` onto package Settings."""
+    """Map ``taxonomy.yaml`` onto package Settings (single wiring path).
+
+    hub#62: delegates to ``llm_dojo_scoring.configure_from_taxonomy`` — the
+    ONE taxonomy→settings mapping the package owns. This module no longer
+    re-implements the coercion; it just hands the package the repo taxonomy.
+    Graceful: when the dojo is missing or the taxonomy block is empty, the
+    package defaults stay in place.
+    """
     try:
-        from llm_dojo_scoring import configure
+        from llm_dojo_scoring import configure_from_taxonomy
     except ImportError:
         return
-    cfg = taxonomy().get("field_scoring") or {}
+    cfg = taxonomy()
     if not cfg:
         return
-    overrides: dict[str, object] = {}
-    band = cfg.get("ambiguous_band")
-    if isinstance(band, (list, tuple)) and len(band) == 2:
-        overrides["field_scoring__ambiguous_band"] = (float(band[0]), float(band[1]))
-    if cfg.get("bipartite_match_threshold") is not None:
-        overrides["field_scoring__bipartite_match_threshold"] = float(
-            cfg["bipartite_match_threshold"]
-        )
-    if "embedding_enabled" in cfg:
-        overrides["field_scoring__embedding_enabled"] = bool(cfg["embedding_enabled"])
-    if cfg.get("embedding_model"):
-        overrides["field_scoring__embedding_model"] = str(cfg["embedding_model"])
-    if cfg.get("embedding_rescue_below") is not None:
-        overrides["field_scoring__embedding_rescue_below"] = float(
-            cfg["embedding_rescue_below"]
-        )
-    pf = cfg.get("partial_gt_fields")
-    if isinstance(pf, (list, tuple)) and pf:
-        overrides["field_scoring__partial_gt_fields"] = set(pf)
-    cf = cfg.get("containment_fields")
-    if isinstance(cf, (list, tuple)) and cf:
-        overrides["field_scoring__containment_fields"] = set(cf)
-    fs = cfg.get("factuality_verification") or {}
-    if "enabled" in fs:
-        overrides["field_scoring__verification_enabled"] = bool(fs.get("enabled"))
-    if fs.get("token_coverage") is not None:
-        overrides["field_scoring__verification_token_coverage"] = float(fs["token_coverage"])
-    if overrides:
-        configure(**overrides)
+    try:
+        configure_from_taxonomy(cfg)
+    except Exception:  # pragma: no cover - malformed taxonomy; keep defaults
+        return
 
 
 _apply_taxonomy_settings()
@@ -120,20 +102,49 @@ except ImportError:  # pragma: no cover - exercised only when extra missing
     _heuristic_field_type = None  # type: ignore[assignment]
 
 
+def _dojo_version() -> str:
+    """Installed llm-dojo-scoring version for telemetry (hub#34)."""
+    if not DOJO_AVAILABLE:
+        return "missing"
+    try:
+        from importlib.metadata import version
+
+        return version("llm-dojo-scoring")
+    except Exception:  # pragma: no cover - metadata always present when importable
+        return "0.15.0"
+
+
 def get_type_bands() -> dict[str, Any]:
-    """Per-field-type ambiguous-band overrides from ``field_scoring.type_bands``."""
-    cfg = taxonomy().get("field_scoring") or {}
-    bands = cfg.get("type_bands") or {}
-    return dict(bands) if isinstance(bands, dict) else {}
+    """Per-field-type ambiguous-band overrides from the wired package settings.
+
+    hub#62: delegates to the package glue (llm_dojo_scoring.get_type_bands),
+    which reads the taxonomy wired by _apply_taxonomy_settings →
+    configure_from_taxonomy.
+    """
+    try:
+        from llm_dojo_scoring import get_type_bands as _dojo_bands
+    except ImportError:
+        cfg = taxonomy().get("field_scoring") or {}
+        bands = cfg.get("type_bands") or {}
+        return dict(bands) if isinstance(bands, dict) else {}
+    return _dojo_bands()
 
 
 def get_field_types(doc_class: str, taxonomy_dict: dict | None = None) -> dict[str, str]:
-    """Field→scoring-type map from taxonomy ``doc_classes[].field_types``."""
+    """Field→scoring-type map from the wired taxonomy (auto-resolving).
+
+    hub#62: delegates to the package glue, which resolves from the taxonomy
+    wired by configure_from_taxonomy when no explicit dict is passed.
+    """
     if not DOJO_AVAILABLE:
         return {}
-    if taxonomy_dict is not None:
-        return package_get_field_types(doc_class, taxonomy_dict)
-    return package_get_field_types(doc_class, taxonomy())
+    try:
+        from llm_dojo_scoring import get_field_types as _dojo_get_field_types
+    except ImportError:  # pragma: no cover - old dojo without top-level name
+        if taxonomy_dict is not None:
+            return package_get_field_types(doc_class, taxonomy_dict)
+        return package_get_field_types(doc_class, taxonomy())
+    return _dojo_get_field_types(doc_class, taxonomy_dict)
 
 
 def _infer_field_types(keys: list[str], predicted: dict, expected: dict) -> dict[str, str]:
@@ -158,7 +169,7 @@ def score_field(
     if not DOJO_AVAILABLE:
         warnings.warn(
             "llm-dojo-scoring is not installed; install the package pin "
-            "(llm-dojo-scoring @ v0.12.1) for production scoring",
+            "(llm-dojo-scoring @ v0.14.0) for production scoring",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -241,7 +252,7 @@ def score_extraction(
     field_types: dict[str, str] | None = None,
     doc_text: str | None = None,
 ) -> dict[str, Any]:
-    """Score an extraction against gold using llm-dojo-scoring v0.12.1."""
+    """Score an extraction against gold using llm-dojo-scoring v0.14.0."""
     predicted = predicted or {}
     expected = expected or {}
     keys = sorted(
@@ -283,7 +294,7 @@ def score_extraction(
             "fields": fields,
             "ambiguous_fields": list(result.ambiguous_fields or []),
             "doc_class": result.doc_class,
-            "engine": "llm-dojo-scoring==0.12.1",
+            "engine": f"llm-dojo-scoring=={_dojo_version()}",
         }
     else:
         fields = [
@@ -369,5 +380,5 @@ def metrics_summary() -> dict[str, Any]:
     return {
         "scored_fields": int(row["n"] or 0),
         "average_score": round(float(row["avg"] or 0.0), 4),
-        "engine": "llm-dojo-scoring==0.12.1" if DOJO_AVAILABLE else "missing",
+        "engine": f"llm-dojo-scoring=={_dojo_version()}" if DOJO_AVAILABLE else "missing",
     }

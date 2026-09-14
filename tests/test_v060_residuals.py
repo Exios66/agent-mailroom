@@ -14,7 +14,9 @@ from agent_mailroom.pipeline.failures import (
     LLM_AUTH,
     LLM_RATE_LIMIT,
     LLM_TIMEOUT,
+    LLM_TRANSIENT,
     RUN_BUDGET,
+    SCHEMA_ERROR,
     UNEXPECTED,
     classify_run_failure,
 )
@@ -39,6 +41,38 @@ def test_classify_run_failure_classes():
     assert classify_run_failure(FileNotFoundError("missing.pdf"))["failure_class"] == IO_ERROR
     assert classify_run_failure(RuntimeError("boom"))["failure_class"] == UNEXPECTED
     assert classify_run_failure(RuntimeError("run budget exceeded"))["failure_class"] == RUN_BUDGET
+
+
+def test_is_transient_error_restores_llm_transient_classification():
+    import httpx
+
+    from agent_mailroom.llm.client import is_transient_error
+
+    # hub#46: is_transient_error previously did not exist — the dedicated
+    # LLM_TRANSIENT path silently never ran. Transport failures must classify.
+    assert classify_run_failure(httpx.ConnectError("connection reset by peer"))["failure_class"] == LLM_TRANSIENT
+    assert is_transient_error(httpx.ReadTimeout("read timed out"))
+    # Timeout-worded transport errors keep the more specific LLM_TIMEOUT class
+    # (failures.py checks timeout markers before the transient helper).
+    assert classify_run_failure(httpx.ReadTimeout("read timed out"))["failure_class"] == LLM_TIMEOUT
+    assert classify_run_failure(
+        httpx.RemoteProtocolError("server disconnected without sending a response")
+    )["failure_class"] == LLM_TRANSIENT
+    assert is_transient_error(httpx.ConnectError("connection refused"))
+
+    class _Http(Exception):
+        def __init__(self, status_code: int, msg: str):
+            super().__init__(msg)
+            self.status_code = status_code
+
+    assert is_transient_error(_Http(503, "service unavailable"))
+    assert is_transient_error(_Http(500, "upstream exploded"))
+    assert classify_run_failure(_Http(500, "upstream exploded"))["failure_class"] == LLM_TRANSIENT
+
+    assert not is_transient_error(ValueError("bad payload"))
+    assert not is_transient_error(RuntimeError("boom"))
+    assert classify_run_failure(ValueError("bad payload"))["failure_class"] == UNEXPECTED
+    assert classify_run_failure(ValueError("schema violation"))["failure_class"] == SCHEMA_ERROR
 
 
 def test_validate_operator_extraction_accepts_matching_schema():

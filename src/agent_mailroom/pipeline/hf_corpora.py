@@ -31,7 +31,7 @@ CORPORA: dict[str, dict[str, Any]] = {
         "id": FULL_CORPUS_ID,
         "role": "full_corpus",
         "pipeline": True,
-        "n_docs": 1650,
+        "n_docs": 3302,
         "classes": list(HUB_CLASSES),
         "gt_config": "ground_truth",
         "row_shape": "docclass",
@@ -39,7 +39,7 @@ CORPORA: dict[str, dict[str, Any]] = {
         "default_config": "default",
         "default_split": "train",
         "source_tag": "source-docclass-merged",
-        "note": "CUAD + MAUD + S-1 + Enron sample + CMS claims (v7, issue #5 intent hydration).",
+        "note": "mailroom-dataset v9 (3,302 rows; successor of the frozen v8 mailroom-corpus).",
     },
     "docclass-pilot": {
         "slug": "docclass-pilot",
