@@ -17,6 +17,9 @@ data/
 node_modules/
 dist/
 office/dist/
+build/
+*.log
+.ipynb_checkpoints/
 
 .idea/
 .vscode/
