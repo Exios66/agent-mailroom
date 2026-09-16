@@ -160,6 +160,18 @@ docs/ARCHITECTURE.md  contracts and data flow
 
 MIT for original code. See [LICENSE](LICENSE). LimeZu tilesets are **not** MIT — see [office/tiles/LIMEZUASSETS-LICENSE.txt](office/tiles/LIMEZUASSETS-LICENSE.txt) and credit [LimeZu](https://limezu.itch.io/).
 
+## Monorepo & sync
+
+This repo is `packages/agent-mailroom` inside the
+[Digital-Mailroom](https://github.com/LLM-Mailroom-Services/Digital-Mailroom)
+monorepo (dev source of truth). Changes flow to the standalone repo
+(`Exios66/agent-mailroom`) ONLY via `scripts/sync_packages.py push`
+(monorepo root) — never hand-edit the mirror and never push directly from
+the standalone side. `status` shows drift (expect 10/10 in sync);
+`push --all --patch` is the release-train sweep. Full law: root
+`AGENTS.md` §Sub-package sync + `docs/wiki/Sub-Package-Sync.md` +
+`docs/wiki/Releases.md`; test tier: `uv run pytest packages/agent-mailroom/tests`.
+
 ---
 
 <div align="center">
