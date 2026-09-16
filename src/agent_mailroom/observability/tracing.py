@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 from contextlib import contextmanager
@@ -8,6 +9,8 @@ from typing import Any, Iterator
 from agent_mailroom.observability import spans as local_spans
 from agent_mailroom.observability.langfuse_setup import flush_langfuse, observation, pipeline_trace
 from agent_mailroom.observability.phoenix_setup import ensure_phoenix, flush_phoenix
+
+log = logging.getLogger("agent_mailroom.observability.tracing")
 
 _flush_ok = 0
 _flush_failures = 0
@@ -107,8 +110,14 @@ def span_context(
     if langfuse_span is not None and output is not None:
         try:
             langfuse_span.update(output=output)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning(
+                "langfuse span.update FAILED for %s (doc %s) — the trace's "
+                "output is STALE (local spans still recorded): %s",
+                name,
+                doc_id,
+                exc,
+            )
     if provider == "phoenix":
         ensure_phoenix()
     flush()

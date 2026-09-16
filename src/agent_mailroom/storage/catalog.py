@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 from agent_mailroom.storage.db import connect, init_db, locked
+
+log = logging.getLogger("agent_mailroom.storage.catalog")
 
 
 def upsert_document(manifest: DocumentManifest) -> None:
@@ -95,13 +98,23 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     if data.get("judge_findings"):
         try:
             data["judge_findings"] = json.loads(data["judge_findings"])
-        except (TypeError, json.JSONDecodeError):
-            pass
+        except (TypeError, json.JSONDecodeError) as exc:
+            log.warning(
+                "row %s carries corrupt judge_findings JSON (%s) — the field is "
+                "silently skipped (counted, not hidden)",
+                data.get("doc_id"),
+                exc,
+            )
     if data.get("arbiter_fields_to_fix"):
         try:
             data["arbiter_fields_to_fix"] = json.loads(data["arbiter_fields_to_fix"])
-        except (TypeError, json.JSONDecodeError):
-            pass
+        except (TypeError, json.JSONDecodeError) as exc:
+            log.warning(
+                "row %s carries corrupt arbiter_fields_to_fix JSON (%s) — the "
+                "field is silently skipped (counted, not hidden)",
+                data.get("doc_id"),
+                exc,
+            )
     return data
 
 

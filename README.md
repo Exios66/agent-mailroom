@@ -19,7 +19,7 @@ A self-contained legal-document mailroom: one state machine per document, specia
 ## What You Get
 
 | Feature | Description |
-|:---|:---|
+| :--- | :--- |
 | **Core pipeline** | intake → classify → extract → judge → report → archive. Happy path: **two LLM calls** |
 | **Six live doc classes** | `contract`, `merger_agreement`, `corporate_record`, `correspondence`, `compliance_filing`, `insurance_claim` |
 | **Pared extraction** | CUAD/MAUD/insurance checklists + semantic trio (`intent` / `subject_matter` / `keywords`) |
@@ -69,7 +69,7 @@ curl -X POST http://127.0.0.1:8000/v1/datasets/pull \
 ## The Floor
 
 | Desk | Agent |
-|:---|:---|
+| :--- | :--- |
 | Reception | Sorter / reviewer |
 | Bay A | Contracts / corporate records |
 | Bay B | Correspondence / compliance / claims |
@@ -84,7 +84,7 @@ Maroon and gold chrome, cream SNES panels, ink that is never pure black. Rooms a
 <div align="center">
 
 | Harness | Role |
-|:---|:---|
+| :--- | :--- |
 | `openrouter` | **Primary.** Set `OPENROUTER_API_KEY`. Default model `qwen/qwen3.7-flash`. |
 | `openai` | Official OpenAI or an `OPENAI_BASE_URL` compatible proxy |
 | `ollama` | Local OpenAI-compatible server |
@@ -104,7 +104,7 @@ Same producer shape as llm-mailroom. Prefer `/v1`.
 <summary>Full endpoint list</summary>
 
 | Method | Path | Role |
-|:---|:---|:---|
+| :--- | :--- | :--- |
 | `GET` | `/v1/health` | Liveness + watcher + harness |
 | `GET` | `/v1/providers` | Requested / active harness and catalog |
 | `GET` | `/v1/datasets` | Lucius-Morningstar corpus registry |

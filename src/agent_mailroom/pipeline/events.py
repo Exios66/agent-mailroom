@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import threading
 from collections import deque
 from typing import Any, Callable
 
 Listener = Callable[[dict[str, Any]], None]
+
+_logger = logging.getLogger("agent_mailroom.pipeline.events")
 
 _lock = threading.Lock()
 _listeners: list[Listener] = []
@@ -30,8 +33,16 @@ def emit(event: dict[str, Any]) -> None:
     for fn in listeners:
         try:
             fn(event)
-        except Exception:
-            continue
+        except Exception as exc:
+            # Live-or-loud (DMR-061): a dead listener must never swallow the
+            # event unseen — name the listener so it can be fixed.
+            _logger.warning(
+                "event listener %r raised while handling %s event — the "
+                "consumer did NOT receive it: %s",
+                getattr(fn, "__name__", repr(fn)),
+                event.get("type", "?"),
+                exc,
+            )
 
 
 def recent(limit: int = 80) -> list[dict[str, Any]]:
