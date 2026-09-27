@@ -1,10 +1,8 @@
 <div align="center">
 
-# 🚶 The Mailroom (Agent)
+# Agent Mailroom
 
 **The llm-mailroom document pipeline, on a walking office floor.**
-
-A self-contained legal-document mailroom: one state machine per document, specialist agents at desks, a hash-chained audit log, and a pixel floor where envelopes fly from reception to the boss.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
