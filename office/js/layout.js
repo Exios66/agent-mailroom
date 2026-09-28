@@ -1,4 +1,4 @@
-import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom9";
+import { collisionGrid, findMonitorTile, spawnTiles } from "./tiled.js?v=mailroom10";
 
 export const TILE = 16;
 export const SCALE = 2;
@@ -37,7 +37,7 @@ export const PROCEDURAL_DESKS = {
   "desk-contracts": { tile: [4, 19], agent: "contracts_specialist", label: "Dwight", face: "down" },
   "desk-corporate": { tile: [12, 19], agent: "corporate_records_specialist", label: "Angela", face: "down" },
   "desk-correspondence": { tile: [25, 19], agent: "correspondence_specialist", label: "Jim", face: "down" },
-  "desk-compliance": { tile: [30, 19], agent: "compliance_specialist", label: "Toby", face: "down" },
+  "desk-merger": { tile: [30, 19], agent: "merger_agreement_specialist", label: "Toby", face: "down" },
   "desk-claims": { tile: [35, 19], agent: "insurance_claims_specialist", label: "Meredith", face: "down" },
 };
 
@@ -213,10 +213,9 @@ export const STAGE_DESK = {
 
 const SPECIALIST_DESK = {
   contract: "desk-contracts",
-  merger_agreement: "desk-contracts",
+  merger_agreement: "desk-merger",
   corporate_record: "desk-corporate",
   correspondence: "desk-correspondence",
-  compliance_filing: "desk-compliance",
   insurance_claim: "desk-claims",
 };
 

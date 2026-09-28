@@ -1,10 +1,16 @@
 # The Mailroom — API + /office/ floor UI
-FROM python:3.11.16-slim-bookworm as builder
+FROM python:3.11.16-slim-bookworm AS builder
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+
+# git: the llm-dojo-scoring dependency is a git+https pin — pip cannot
+# resolve it without a git binary (the 0.2.0 image failed at this step).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
 
 # Keep repo layout so office_dir() and demo fixtures resolve (editable install).
 COPY pyproject.toml README.md ./
@@ -25,7 +31,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     MAILROOM_HOST=0.0.0.0 \
     MAILROOM_PORT=8000 \
-    MAILROOM_BASE_DIR=/app/data
+    MAILROOM_BASE_DIR=/app/data \
+    MAILROOM_OFFICE_DIR=/app/office \
+    MAILROOM_FIXTURES_DIR=/app/fixtures/samples
 
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages

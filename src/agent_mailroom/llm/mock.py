@@ -27,11 +27,6 @@ def classify(text: str) -> dict[str, Any]:
             ("board of directors", "resolved,", "written consent", "bylaws"),
         ),
         (
-            "compliance_filing",
-            0.98,
-            ("form 10-k", "form 10-q", "securities and exchange", "item 1a"),
-        ),
-        (
             "merger_agreement",
             0.99,
             ("agreement and plan of merger", "surviving corporation", "merger consideration"),
@@ -45,10 +40,12 @@ def classify(text: str) -> dict[str, Any]:
     for doc_type, conf, needles in rules:
         hits = sum(1 for needle in needles if needle in blob)
         if hits >= 2 or (hits == 1 and doc_type in {"insurance_claim", "correspondence"}):
+            subclass = {"contract": "service", "merger_agreement": "all_cash"}.get(doc_type)
             return {
                 "doc_type": doc_type,
-                "doc_subclass": None,
-                "contract_subtype": "msa" if doc_type == "contract" else None,
+                "doc_subclass": subclass,
+                # contract_subtype is CUAD-only and equals doc_subclass.
+                "contract_subtype": subclass if doc_type == "contract" else None,
                 "confidence": conf,
                 "reasoning": f"mock rule hits={hits} type={doc_type}",
             }
@@ -67,7 +64,30 @@ def _first(pattern: str, text: str) -> str | None:
 
 
 def extract(doc_type: str, text: str) -> dict[str, Any]:
-    if doc_type in {"contract", "merger_agreement"}:
+    if doc_type == "merger_agreement":
+        return {
+            "document_name": _first(r"^(.*plan of merger.*)$", text) or "Agreement and Plan of Merger",
+            "parties": [
+                p
+                for p in re.findall(
+                    r"\b([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)+(?:, Inc\.| Corporation| Inc\.))",
+                    text,
+                )[:3]
+            ],
+            "effective_date": _first(r"dated as of\s+([A-Z][a-z]+ \d{1,2}, \d{4})", text),
+            "effective_time": _first(r"effective at (\d{1,2}:\d{2} [ap]\.m\.[^\n]*?)\s+on the date", text),
+            "governing_law": _first(r"laws of the State of (Delaware|New York)", text),
+            "merger_consideration": "all_cash" if "in cash" in text.lower() else "other",
+            "maud_clauses": [
+                "Type of Consideration: All Cash",
+                "Absence of Litigation Closing Condition: Governmental Authority",
+            ],
+            "intent": "effect_merger",
+            "subject_matter": "Cash merger of Merger Sub into the Company, which survives as a subsidiary of Parent",
+            "keywords": ["merger", "merger consideration", "effective time"],
+            "confidence": 0.97,
+        }
+    if doc_type == "contract":
         return {
             "document_name": _first(r"^(.*agreement.*)$", text.splitlines()[0] if text else "")
             or "Master Services Agreement",
@@ -84,7 +104,8 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
                 "Governing Law: Delaware",
                 "Payment: Net 30",
             ],
-            "maud_clauses": [] if doc_type == "contract" else ["Merger Consideration: mixed"],
+            "cuad_family": "service",
+            "maud_clauses": [],
             "confidence": 0.98,
         }
     if doc_type == "corporate_record":
@@ -92,7 +113,7 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
             "entity_name": _first(r"OF\n([A-Z][A-Z0-9 .,&'-]+)", text)
             or _first(r"of\n([A-Za-z0-9 .,&'-]+)", text)
             or "HarborPoint Holdings, Inc.",
-            "record_type": "board_consent" if "consent" in text.lower() else "corporate_record",
+            "record_type": "board_resolution" if "consent" in text.lower() else "other",
             "effective_date": _first(r"as of the (\d{1,2}(?:st|nd|rd|th)? day of [A-Za-z]+, \d{4})", text),
             "signatories": re.findall(r"/s/\s+([A-Za-z .]+)", text)[:5],
             "jurisdiction": _first(r"(Delaware|Wisconsin|New York)", text),
@@ -105,7 +126,7 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
         return {
             "sender": _first(r"This firm represents ([^.]+)", text) or "Northwind Logistics Corporation",
             "recipient": _first(r"Attn:\s+(.+)", text) or "General Counsel",
-            "communication_type": "demand_letter" if "demand" in text.lower() else "letter",
+            "communication_type": "demand" if "demand" in text.lower() else "letter",
             "communication_date": _first(
                 r"^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}",
                 text,
@@ -117,15 +138,6 @@ def extract(doc_type: str, text: str) -> dict[str, Any]:
             "subject_matter": "Unpaid invoices and material breach",
             "keywords": ["demand", "breach", "invoices"],
             "confidence": 0.94,
-        }
-    if doc_type == "compliance_filing":
-        return {
-            "filing_type": _first(r"(Form 10-K|Form 10-Q|Form 8-K|S-1)", text) or "Form 10-K",
-            "regulatory_body": "SEC",
-            "entity_name": _first(r"([A-Z][A-Za-z0-9 .,&]+(?:, Inc\.))", text),
-            "status": "filed",
-            "key_requirements": ["Risk factors", "Financial statements"],
-            "confidence": 0.96,
         }
     if doc_type == "insurance_claim":
         return {

@@ -1,5 +1,9 @@
 # Agent Mailroom taxonomy — config over code.
-# Aligned to llm-mailroom v0.6.0 (pared LLM load + severity-aware gates).
+# Mirrors llm-mailroom 0.7.1 @959bb0bce152 src/config/taxonomy.yaml (doc
+# classes, severity gates, model registry, per-agent harness, scoring bands)
+# plus the office-floor extras this app adds (bins.hive, stamps, desks,
+# characters, hive speech acts). Subclass catalogs are the mailroom-dataset
+# v9.1 ``expected_subclass`` vocabulary.
 
 pipeline:
   bins:
@@ -11,6 +15,45 @@ pipeline:
     archive: "{base_dir}/archive"
     manifests: "{base_dir}/manifests"
     hive: "{base_dir}/hive"
+
+# Transient LLM failures (429 / 5xx / timeouts) retry with exponential backoff
+# and jitter; other 4xx never retry.
+llm_retry:
+  max_attempts: 5
+  base_delay: 1.0
+  rate_limit_base_delay: 8.0
+  max_delay: 60.0
+  jitter: 0.3
+
+run_limits:
+  deadline_seconds: 3600
+  llm_call_timeout_seconds: 120
+  max_total_output_tokens: 20000
+
+# USD per 1M tokens (OpenRouter list prices) — llm-mailroom cost_models.
+cost_models:
+  openrouter/free: { input_per_million: 0.0, output_per_million: 0.0 }
+  z-ai/glm-5.2:free: { input_per_million: 0.0, output_per_million: 0.0 }
+  qwen/qwen3.7-flash: { input_per_million: 0.03, output_per_million: 0.13 }
+  deepseek/deepseek-v4-flash: { input_per_million: 0.05, output_per_million: 0.25 }
+  deepseek/deepseek-v4-pro: { input_per_million: 0.435, output_per_million: 0.87 }
+
+# OpenRouter model id -> local runtime tag (provider = vllm / ollama / llamafile).
+vllm_model_map:
+  qwen/qwen3.7-flash: Qwen/Qwen3-8B
+  deepseek/deepseek-v4-flash: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+  deepseek/deepseek-v4-pro: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+  openrouter/free: Qwen/Qwen3-8B
+ollama_model_map:
+  qwen/qwen3.7-flash: qwen3:7b
+  deepseek/deepseek-v4-flash: deepseek-r1:8b
+  deepseek/deepseek-v4-pro: deepseek-r1:14b
+  openrouter/free: qwen3:7b
+llamafile_model_map:
+  qwen/qwen3.7-flash: qwen3:7b
+  deepseek/deepseek-v4-flash: qwen3:7b
+  deepseek/deepseek-v4-pro: qwen3:14b
+  openrouter/free: qwen3:7b
 
 # Global fallbacks (used before doc_type is known). Per-class severity overrides
 # under by_class win once classification is set — see loader.confidence().
@@ -37,10 +80,6 @@ confidence:
       high: 0.98
       low: 0.90
       judge_band_high: 0.97
-    compliance_filing:
-      high: 0.97
-      low: 0.88
-      judge_band_high: 0.95
     corporate_record:
       high: 0.96
       low: 0.86
@@ -55,47 +94,120 @@ file_extensions:
   - .md
   - .pdf
   - .docx
+  - .jpg
+  - .jpeg
+  - .png
+  - .gif
+  - .bmp
+  - .webp
+  - .tiff
+  - .tif
 
 doc_classes:
   - key: contract
-    label: Contract
+    label: Contract / Agreement
     schema: ContractExtraction
     specialist: contracts_specialist
+    description: CUAD commercial contracts and agreements (vendor, employment, NDA, license, …) — not MAUD merger agreements
     stamp: "#7d97b5"
-    subclasses: [nda, msa, lease, employment, services, license]
+    subclasses: [affiliate, agency, co_branding, collaboration, consulting, development, distributor, endorsement, franchise, hosting, ip, joint_venture, license, maintenance, manufacturing, marketing, non_compete_no_solicit, outsourcing, promotion, reseller, service, sponsorship, strategic_alliance, supply, transportation, other]
+    field_types:
+      document_name: name
+      parties: entity_list:name
+      effective_date: date
+      term_length: free_text
+      governing_law: name
+      contract_value: money
+      renewal_terms: free_text
+      cuad_family: name
+      merger_consideration: name
+      cuad_clauses: entity_list:free_text
+      maud_clauses: entity_list:free_text
   - key: merger_agreement
     label: Merger Agreement
-    schema: ContractExtraction
-    specialist: contracts_specialist
+    schema: MergerAgreementExtraction
+    specialist: merger_agreement_specialist
+    description: MAUD merger agreements (agreement and plan of merger); subclass is the consideration type
     stamp: "#8aa3c0"
-    subclasses: [stock_purchase, asset_purchase, merger]
+    subclasses: [all_cash, all_stock, mixed_cash_stock, mixed_cash_stock_election, other]
+    field_types:
+      document_name: name
+      parties: entity_list:name
+      effective_date: date
+      effective_time: free_text
+      governing_law: name
+      merger_consideration: name
+      maud_clauses: entity_list:free_text
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
   - key: corporate_record
     label: Corporate Record
     schema: CorporateRecordExtraction
     specialist: corporate_records_specialist
+    description: Bylaws, articles/certificates of incorporation, powers of attorney, stockholder rights instruments, board resolutions
     stamp: "#659099"
-    subclasses: [bylaws, resolution, consent, charter]
+    subclasses: [articles_of_incorporation, board_resolution, bylaws, charter_amendment, indenture, officer_certificate, powers_of_attorney, rights_instrument, subsidiary_list, other]
+    field_types:
+      entity_name: name
+      record_type: name
+      effective_date: date
+      signatories: entity_list:name
+      jurisdiction: name
+      filing_number: id
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
   - key: correspondence
     label: Correspondence
     schema: CorrespondenceExtraction
     specialist: correspondence_specialist
+    description: Letters, emails, memos, notices, demand letters, press releases, meeting requests
     stamp: "#e8b478"
-    subclasses: [demand_letter, memo, notice, engagement_letter]
-  - key: compliance_filing
-    label: Compliance Filing
-    schema: ComplianceFilingExtraction
-    specialist: compliance_specialist
-    stamp: "#7a8fb0"
-    subclasses: [10-k, 10-q, 8-k, state_filing]
+    subclasses: [email, letter, memo, notice, demand, attorney_demand, press_release, meeting_request]
+    field_types:
+      sender: name
+      recipient: name
+      additional_recipients: entity_list
+      communication_type: name
+      communication_date: date
+      action_items: entity_list
+      demand_amount: money
+      urgency: name
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
   - key: insurance_claim
     label: Insurance Claim
     schema: InsuranceClaimExtraction
     specialist: insurance_claims_specialist
+    description: FNOL forms, adjuster reports, coverage determinations, denial letters, CMS claim tables, property / auto lines
     stamp: "#b18ec2"
-    subclasses: [property, liability, workers_comp, denial]
+    subclasses: [pde, inpatient, outpatient, carrier, property, auto]
+    field_types:
+      claim_number: id
+      policy_number: id
+      insurer: name
+      insured_party: name
+      claim_type: name
+      date_of_loss: date
+      date_filed: date
+      claimed_amount: money
+      adjuster: name
+      damages_description: free_text
+      coverage_determination: name
+      denial_reasons: entity_list:free_text
+      supporting_documents: entity_list
+      intent: name
+      subject_matter: free_text
+      keywords: entity_list:name
+      claim_checklist: entity_list:free_text
 
-# Office-floor roster. character ids are original procedural sprites.
-# Optional per-agent harness: provider / model (else OpenRouter defaults).
+# Office-floor roster (one avatar per desk). character ids are original
+# procedural sprites. The harness keys (provider / model / temperature /
+# max_tokens / max_input_chars / reasoning_effort) mirror llm-mailroom's
+# per-agent config; reasoning_effort "none" is deliberate — reasoning starved
+# JSON output on qwen3.7-flash. OPENROUTER_MODEL overrides every agent's model.
 agents:
   sorter:
     label: Sorter
@@ -103,54 +215,108 @@ agents:
     desk: desk-reception
     character: pam
     room: reception
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 2048
+    max_input_chars: 12000
+    reasoning_effort: none
   sorter_reviewer:
     label: Sorter Reviewer
     role: review-classify
     desk: desk-reception-2
     character: kelly
     room: reception
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 2048
+    max_input_chars: 12000
+    reasoning_effort: none
   contracts_specialist:
     label: Contracts
     role: extract
     desk: desk-contracts
     character: dwight
     room: bay-a
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 100000
+    reasoning_effort: none
+  merger_agreement_specialist:
+    label: Mergers (MAUD)
+    role: extract
+    desk: desk-merger
+    character: toby
+    room: bay-b
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 100000
+    reasoning_effort: none
   corporate_records_specialist:
     label: Corporate Records
     role: extract
     desk: desk-corporate
     character: angela
     room: bay-a
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 60000
+    reasoning_effort: none
   correspondence_specialist:
     label: Correspondence
     role: extract
     desk: desk-correspondence
     character: jim
     room: bay-b
-  compliance_specialist:
-    label: Compliance
-    role: extract
-    desk: desk-compliance
-    character: toby
-    room: bay-b
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 40000
+    reasoning_effort: none
   insurance_claims_specialist:
     label: Insurance Claims
     role: extract
     desk: desk-claims
     character: meredith
     room: bay-b
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 60000
+    reasoning_effort: none
   judge:
     label: Judge
     role: evaluate
     desk: desk-judge
     character: oscar
     room: judge
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 2048
+    max_input_chars: 60000
+    reasoning_effort: none
   arbiter:
     label: Arbiter
     role: adjudicate
     desk: desk-arbiter
     character: stanley
     room: judge
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 4096
+    max_input_chars: 100000
+    reasoning_effort: none
   boss:
     label: Boss
     role: adjudicate
@@ -158,7 +324,13 @@ agents:
     character: michael
     room: boss
     god: true
-  # Reporter is procedural (no LLM) as of llm-mailroom v0.6.0.
+    provider: openrouter
+    model: qwen/qwen3.7-flash
+    temperature: 0.1
+    max_tokens: 8192
+    max_input_chars: 40000
+    reasoning_effort: max
+  # Reporter is procedural (no LLM) upstream.
   reporter:
     label: Reporter
     role: report
@@ -166,12 +338,32 @@ agents:
     character: ryan
     room: report
     procedural: true
+  # Archive + catalog are procedural file moves; the archivist carries the
+  # envelope on the floor (no LLM call).
   archivist:
     label: Archivist
     role: archive
     desk: desk-archive
     character: creed
     room: archive
+    procedural: true
+
+# Vision (page images for scanned PDFs / images) uses the sorter's harness
+# unless VISION_MODEL is set.
+vision:
+  enabled: true
+  max_pages: 10
+  dpi: 150
+  # Model-id substrings that accept image input.
+  models:
+    - qwen/
+    - gpt-4o
+    - gpt-4.1
+    - claude
+    - gemini
+    - llava
+    - llama-3.2
+    - qwen-vl
 
 # Speech-act colors for flying envelopes.
 hive_acts:
@@ -183,20 +375,10 @@ hive_acts:
   done: "#5CA97A"
   refuse: "#D96A62"
 
-vision:
-  enabled: true
-  max_pages: 10
-  dpi: 150
-  models:
-    - qwen
-    - gpt-4o
-    - gemini
-    - claude-3
-
-# Deterministic field-type-aware scoring via llm-dojo-scoring v0.14.0
-# (same pin as llm-mailroom v0.7.0). Local module is a shim + SQLite glue.
+# Deterministic field-type-aware scoring via llm-dojo-scoring (same pin as
+# llm-mailroom 0.7.1). Local module is a shim + SQLite glue.
 field_scoring:
-  ambiguous_band: [0.55, 0.85]
+  ambiguous_band: [0.5, 0.85]
   type_bands:
     date: never
     id: never
@@ -205,11 +387,12 @@ field_scoring:
     name: [0.5, 1.0]
     entity_list: [0.5, 1.0]
   bipartite_match_threshold: 0.6
+  # Local sentence-transformers only; the dojo never calls a remote embedder
+  # unless LLM_DOJO_REMOTE_EMBEDDINGS=1 (0.17.0+).
   embedding_enabled: false
   embedding_model: sentence-transformers/all-MiniLM-L6-v2
   embedding_rescue_below: 0.7
   containment_fields: [governing_law, term_length, renewal_terms, subject_matter]
-  # Pared v0.6.0 checklists (not open key_obligations / termination_clauses).
   partial_gt_fields: [parties, keywords, cuad_clauses, maud_clauses, claim_checklist, action_items]
   factuality_verification:
     enabled: true

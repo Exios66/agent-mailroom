@@ -11,13 +11,22 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-DEFAULT_CACHE_DIR = "/tmp/agent-mailroom-trace-cache"
 CACHE_SOURCE = "local-cache"
 
 
 def cache_dir() -> Path:
-    raw = (os.environ.get("MAILROOM_TRACE_CACHE_DIR") or DEFAULT_CACHE_DIR).strip()
-    return Path(raw or DEFAULT_CACHE_DIR)
+    """``MAILROOM_TRACE_CACHE_DIR``, else ``<MAILROOM_BASE_DIR>/trace-cache``.
+
+    The old fixed ``/tmp/agent-mailroom-trace-cache`` was shared by every
+    instance on the host (and every test run), so one office served another
+    office's cached runs.
+    """
+    raw = (os.environ.get("MAILROOM_TRACE_CACHE_DIR") or "").strip()
+    if raw:
+        return Path(raw)
+    from agent_mailroom.config.loader import base_dir
+
+    return base_dir() / "trace-cache"
 
 
 def safe_id(trace_id: str) -> str:

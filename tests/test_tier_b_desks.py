@@ -17,7 +17,10 @@ def test_meta_subclasses(client):
     meta = client.get("/v1/meta").json()
     assert "subclasses" in meta
     assert "contract" in meta["subclasses"]
-    assert "nda" in meta["subclasses"]["contract"]
+    # mailroom-dataset v9.1 vocabulary: CUAD families / MAUD consideration.
+    assert "license" in meta["subclasses"]["contract"]
+    assert "all_cash" in meta["subclasses"]["merger_agreement"]
+    assert "compliance_filing" not in meta["subclasses"]
 
 
 def test_subclass_catalog_loader():

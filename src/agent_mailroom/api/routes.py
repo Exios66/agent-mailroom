@@ -11,15 +11,17 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from agent_mailroom.api.present import document_view, floor_bins, floor_run, read_source_text
+from agent_mailroom.api.security import is_public_bind, open_mode_allowed
 from agent_mailroom.observability.field_scoring import list_scores, metrics_summary
 from agent_mailroom.observability.spans import list_spans
-from agent_mailroom.observability.trace_cache import load_floor, load_run, persist_floor, persist_run
+from agent_mailroom.observability.trace_cache import load_floor, load_run
 from agent_mailroom.observability.tracing import flush_health, resolve_provider_name
 from agent_mailroom.config.loader import accepted_extensions, agent_roster, live_doc_types, subclass_catalog, taxonomy
 from agent_mailroom.llm.providers import provider_status
 from agent_mailroom.office_theme import tileset_status
 from agent_mailroom.hive.mailbox import list_inbox, roster_status
 from agent_mailroom.pipeline.bins import (
+    document_index,
     enqueue_inbox,
     inbox_pending,
     list_classified_snapshots,
@@ -27,6 +29,8 @@ from agent_mailroom.pipeline.bins import (
     read_inbox_meta,
     review_dir,
     hive_dir,
+    safe_slug,
+    valid_doc_id,
 )
 from agent_mailroom.pipeline.events import recent
 from agent_mailroom.pipeline.reconsider import enrich_row
@@ -85,6 +89,13 @@ def _spawn(fn, **kwargs) -> None:
 def _auth(authorization: str | None) -> None:
     tokens = active_api_tokens()
     if not tokens:
+        # Fail closed: a public bind with no token served every document and
+        # accepted every write from the network.
+        if is_public_bind() and not open_mode_allowed():
+            raise HTTPException(
+                status_code=503,
+                detail="public bind without MAILROOM_API_TOKEN — set a token (or MAILROOM_ALLOW_OPEN=1 behind a trusted proxy)",
+            )
         return
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="invalid token")
@@ -99,7 +110,7 @@ def _auth_required() -> bool:
 
 def _accept_inbox(raw: bytes, filename: str, *, doc_id: str, matter_id: str, source: str) -> list[str]:
     """Write inbox + sidecar. Drain immediately under MAILROOM_SYNC; else the watcher claims it."""
-    enqueue_inbox(raw, filename, doc_id=doc_id, matter_id=matter_id, source=source)
+    enqueue_inbox(raw, filename, doc_id=doc_id, matter_id=safe_slug(matter_id), source=source)
     if os.environ.get("MAILROOM_SYNC") == "1":
         return scan_inbox()
     return []
@@ -115,11 +126,16 @@ def _hive_stats() -> dict[str, Any]:
 
 @router.get("/health")
 def health() -> dict[str, Any]:
+    from agent_mailroom.storage.db import ping
+
     watch = watcher_status()
     lamp = watcher_lamp()
+    database = ping()
     overall = "ok"
     if lamp in {"stale", "missing"}:
         overall = "degraded"
+    if not database:
+        overall = "down"
     return {
         "status": overall,
         "service": "agent-mailroom",
@@ -129,7 +145,7 @@ def health() -> dict[str, Any]:
         "checks": {
             "llm_provider": provider_status()["active"],
             "llm": provider_status(),
-            "database": True,
+            "database": database,
             "watcher": lamp,
             "watcher_embedded": watch["running"],
             "inbox_pending": watch["inbox_pending"],
@@ -149,6 +165,7 @@ def ops_status(authorization: str | None = Header(default=None)) -> dict[str, An
     _auth(authorization)
     from datetime import datetime, timezone
 
+    from agent_mailroom.storage.catalog import stuck_documents
     from agent_mailroom.storage.db import connect, init_db, locked
 
     init_db()
@@ -163,13 +180,9 @@ def ops_status(authorization: str | None = Header(default=None)) -> dict[str, An
                 "SELECT COALESCE(doc_type, 'unknown') AS c, COUNT(*) AS n FROM documents GROUP BY doc_type"
             ):
                 by_class[row["c"]] = row["n"]
-            stuck = conn.execute(
-                """
-                SELECT COUNT(*) AS n FROM documents
-                WHERE stage IN ('processing', 'classified', 'inbox')
-                  AND updated_at < datetime('now', '-15 minutes')
-                """
-            ).fetchone()["n"]
+    # Same ISO-aware comparison as recover_stuck (the text comparison
+    # against datetime('now') never matched "T"-separated rows).
+    stuck = len(stuck_documents(15))
     review = list_review_queue()
     reconsider = sum(1 for row in list_documents_by_stage("archived") if enrich_row(row)["needs_reconsideration"])
     return {
@@ -210,6 +223,7 @@ async def upload(
     if len(raw) > 20 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="file too large")
     doc_id = str(uuid4())
+    matter_id = safe_slug(matter_id)
     _accept_inbox(raw, file.filename or "upload.bin", doc_id=doc_id, matter_id=matter_id, source="upload")
     return JSONResponse(
         status_code=202,
@@ -243,7 +257,8 @@ def audit(doc_id: str, authorization: str | None = Header(default=None)) -> dict
 @router.get("/review/queue")
 def review_queue(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
-    docs = [document_view(row) for row in list_review_queue()]
+    index = document_index()
+    docs = [document_view(row, index) for row in list_review_queue()]
     return {
         "review_queue": len(docs),
         "documents": docs,
@@ -261,6 +276,77 @@ class ResolveBody(BaseModel):
     extracted_data: dict[str, Any] | None = None
 
 
+DECISIONS = frozenset({"approved", "rejected"})
+DISPOSITIONS = ("resume", "record", "requeue", "complete")
+
+
+def _class_override(row: dict[str, Any], body: ResolveBody) -> dict[str, Any]:
+    """Validate an operator reroute (llm-mailroom ``apply_classification_override``)."""
+    override = (body.override_doc_type or body.doc_type or "").strip() or None
+    subclass = (body.doc_subclass or "").strip() or None
+    out: dict[str, Any] = {}
+    if override:
+        if override not in set(live_doc_types()):
+            raise HTTPException(status_code=400, detail=f"unknown doc_type {override!r}")
+        if override != row.get("doc_type"):
+            out["doc_type"] = override
+    if subclass:
+        target = override or row.get("doc_type")
+        allowed = subclass_catalog().get(str(target or ""), [])
+        if allowed and subclass not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"doc_subclass {subclass!r} is not a {target} subclass",
+            )
+        if subclass != row.get("doc_subclass"):
+            out["doc_subclass"] = subclass
+    return out
+
+
+def _manifest_from_row(row: dict[str, Any], **changes: Any):
+    """Merge changes onto the stored row — a fresh manifest used to drop
+    contract_subtype, judge findings, failure_class and attempt counters."""
+    from agent_mailroom.schemas.manifest import DocumentManifest
+
+    fields = DocumentManifest.model_fields
+    data = {key: row.get(key) for key in fields if key in row and row.get(key) is not None}
+    for key in ("created_at", "updated_at"):
+        data.pop(key, None)
+    data.update(changes)
+    manifest = DocumentManifest.model_validate(data)
+    if row.get("created_at"):
+        try:
+            from datetime import datetime
+
+            manifest.created_at = datetime.fromisoformat(str(row["created_at"]))
+        except ValueError:
+            pass
+    return manifest
+
+
+def _resume_job(doc_id: str, doc_type: str | None) -> None:
+    """Background resume that reports failures instead of dying silently in
+    a daemon thread."""
+    from agent_mailroom.pipeline.events import emit
+    from agent_mailroom.storage.audit import write_audit
+
+    try:
+        resume_from_review(doc_id, doc_type=doc_type)
+    except Exception as exc:
+        emit({"type": "error", "doc_id": doc_id, "subject": f"resume failed: {exc}"})
+        row = get_document(doc_id)
+        if row:
+            write_audit(
+                doc_id=doc_id,
+                matter_id=row["matter_id"],
+                event="review_resume_failed",
+                actor="system",
+                detail={"error": str(exc)[:500]},
+            )
+        if os.environ.get("MAILROOM_SYNC") == "1":
+            raise
+
+
 @router.post("/review/{doc_id}/resolve")
 def resolve(
     doc_id: str,
@@ -268,84 +354,110 @@ def resolve(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     _auth(authorization)
+    from agent_mailroom.schemas.manifest import PipelineStage
+    from agent_mailroom.storage.audit import write_audit
+    from agent_mailroom.storage.catalog import upsert_document
+
+    if not valid_doc_id(doc_id):
+        raise HTTPException(status_code=400, detail="invalid doc_id")
     row = get_document(doc_id)
     if not row:
         raise HTTPException(status_code=404, detail="unknown document")
-    decision = body.decision.lower()
-    disposition = body.disposition.lower()
-    override = body.override_doc_type or body.doc_type
+    decision = (body.decision or "").strip().lower()
+    disposition = (body.disposition or "resume").strip().lower()
+    if decision not in DECISIONS:
+        raise HTTPException(status_code=400, detail="decision must be 'approved' or 'rejected'")
+    if disposition not in DISPOSITIONS:
+        raise HTTPException(status_code=400, detail=f"disposition must be one of {', '.join(DISPOSITIONS)}")
+    override = _class_override(row, body)
+    notes = (body.notes or "").strip() or None
 
+    # --- record: paper trail only (any stage) -------------------------------
     if disposition == "record":
-        from agent_mailroom.storage.audit import write_audit
-        from agent_mailroom.storage.catalog import upsert_document
-        from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
-
-        upsert_document(
-            DocumentManifest(
-                doc_id=doc_id,
-                matter_id=row["matter_id"],
-                original_filename=row["original_filename"],
-                stage=PipelineStage.REVIEW,
-                graph_node="human_review",
-                doc_type=override or row.get("doc_type"),
-                doc_subclass=body.doc_subclass or row.get("doc_subclass"),
-                classification_confidence=row.get("classification_confidence"),
-                extraction_confidence=row.get("extraction_confidence"),
-                extracted_data=body.extracted_data or row.get("extracted_data"),
-                report=row.get("report"),
-                escalation_reason=row.get("escalation_reason"),
-                routing_path=list(row.get("routing_path") or []),
-                review_decision="recorded",
-            )
-        )
+        changes: dict[str, Any] = dict(override)
+        if notes:
+            prior = row.get("escalation_reason") or ""
+            tag = f"[review:{decision}] {notes}"
+            changes["escalation_reason"] = f"{prior}; {tag}".strip("; ") if prior else tag
+        if changes:
+            upsert_document(_manifest_from_row(row, **changes))
         write_audit(
             doc_id=doc_id,
             matter_id=row["matter_id"],
             event="review_recorded",
             actor="human",
-            detail={"notes": body.notes, "doc_type": override, "doc_subclass": body.doc_subclass},
+            detail={"decision": decision, "notes": notes, **({"class_override": override} if override else {})},
         )
-        return {"status": "recorded", "doc_id": doc_id}
+        return {"status": "recorded", "doc_id": doc_id, "decision": decision, "class_override": override or None}
 
+    parked = next(review_dir().glob(f"{doc_id}--*"), None)
+
+    # --- requeue: parked file → inbox as a fresh run -------------------------
     if disposition == "requeue":
-        parked = next(review_dir().glob(f"{doc_id}--*"), None)
-        if parked is None:
-            raise HTTPException(status_code=404, detail="no parked file")
+        source = parked or locate_document(doc_id).get("path")
+        if source is None:
+            raise HTTPException(status_code=404, detail="source file not found for requeue")
         new_id = str(uuid4())
-        _accept_inbox(parked.read_bytes(), parked.name, doc_id=new_id, matter_id=row["matter_id"], source="requeue")
-        from agent_mailroom.storage.audit import write_audit
+        _accept_inbox(source.read_bytes(), row["original_filename"], doc_id=new_id, matter_id=row["matter_id"], source="requeue")
+        if parked is not None:
+            # The parked copy stayed in the review tray forever and the row
+            # kept counting as open review work. The bytes now live in the
+            # inbox under ``new_id``; this row is closed as superseded.
+            parked.unlink(missing_ok=True)
+            upsert_document(
+                _manifest_from_row(
+                    row,
+                    stage=PipelineStage.FAILED,
+                    graph_node="human_review",
+                    review_decision="requeued",
+                    escalation_reason=f"requeued as {new_id}",
+                )
+            )
+        write_audit(
+            doc_id=doc_id,
+            matter_id=row["matter_id"],
+            event="review_requeued",
+            actor="human",
+            detail={"decision": decision, "new_doc_id": new_id, "notes": notes},
+        )
+        return {"status": "requeued", "doc_id": doc_id, "new_doc_id": new_id}
 
-        write_audit(doc_id=doc_id, matter_id=row["matter_id"], event="review_requeued", actor="human", detail={})
-        return {"status": "requeued", "doc_id": doc_id}
-
-    if disposition == "complete" and decision != "approved":
-        raise HTTPException(status_code=400, detail="disposition=complete requires decision=approved")
+    # Remaining dispositions need a parked review document.
+    if row.get("stage") != "review" or parked is None:
+        raise HTTPException(
+            status_code=400 if row.get("stage") != "review" else 404,
+            detail=(
+                f"document is not in review (stage {row.get('stage')}); use disposition=record or requeue"
+                if row.get("stage") != "review"
+                else "no parked file"
+            ),
+        )
 
     if decision == "rejected":
-        parked = next(review_dir().glob(f"{doc_id}--*"), None)
-        if parked is None:
-            raise HTTPException(status_code=404, detail="no parked file")
+        if disposition == "complete":
+            raise HTTPException(status_code=400, detail="disposition=complete requires decision=approved")
         state = RunState(
             doc_id=doc_id,
             matter_id=row["matter_id"],
             original_filename=row["original_filename"],
             file_path=parked,
+            doc_type=row.get("doc_type"),
             routing_path=list(row.get("routing_path") or []),
             judge_verdict=row.get("judge_verdict"),
             arbiter_decision=row.get("arbiter_decision"),
             arbiter_reasoning=row.get("arbiter_reasoning"),
             arbiter_handoff=row.get("arbiter_handoff"),
+            review_decision="rejected",
         )
-        fail_document(state, body.notes or "rejected")
+        fail_document(state, notes or "rejected")
         return {"status": "failed", "doc_id": doc_id}
 
-    if disposition == "complete" and decision == "approved":
+    doc_type = override.get("doc_type") or row.get("doc_type")
+    doc_subclass = override.get("doc_subclass") or row.get("doc_subclass")
+
+    if disposition == "complete":
         from agent_mailroom.pipeline.runner import archive_document
 
-        parked = next(review_dir().glob(f"{doc_id}--*"), None)
-        if parked is None:
-            raise HTTPException(status_code=404, detail="no parked file")
-        doc_type = override or row.get("doc_type")
         try:
             extracted = resolve_complete_extracted(body.extracted_data, row.get("extracted_data"))
             extracted = validate_operator_extraction(doc_type or "", extracted)
@@ -353,7 +465,7 @@ def resolve(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         conf = extracted.get("confidence")
         try:
-            extraction_confidence = float(conf) if conf is not None else 1.0
+            extraction_confidence = float(conf) if conf else 1.0
         except (TypeError, ValueError):
             extraction_confidence = 1.0
         state = RunState(
@@ -362,7 +474,8 @@ def resolve(
             original_filename=row["original_filename"],
             file_path=parked,
             doc_type=doc_type,
-            doc_subclass=body.doc_subclass or row.get("doc_subclass"),
+            contract_subtype=row.get("contract_subtype"),
+            doc_subclass=doc_subclass,
             extracted_data=extracted,
             extraction_confidence=extraction_confidence,
             classification_confidence=row.get("classification_confidence"),
@@ -378,11 +491,13 @@ def resolve(
         archive_document(state)
         return {"status": "archived", "doc_id": doc_id}
 
-    # resume
-    if not (override or row.get("doc_type")):
+    # --- resume (approved only) ---------------------------------------------
+    if not doc_type:
         raise HTTPException(status_code=400, detail="doc_type required to resume")
-    _spawn(resume_from_review, doc_id=doc_id, doc_type=override or row.get("doc_type"))
-    return {"status": "resumed", "doc_id": doc_id}
+    if override:
+        upsert_document(_manifest_from_row(row, **override))
+    _spawn(_resume_job, doc_id=doc_id, doc_type=doc_type)
+    return {"status": "resumed", "doc_id": doc_id, "class_override": override or None}
 
 
 @router.get("/queue")
@@ -402,12 +517,13 @@ def queue(authorization: str | None = Header(default=None)) -> dict[str, Any]:
             }
         )
     docs = list_documents(200)
+    index = document_index()
     return {
         "inbox": hopper,
         "queued": hopper,
-        "processing": [document_view(d) for d in docs if d["stage"] in {"processing", "classified"}],
-        "review": [document_view(d) for d in docs if d["stage"] == "review"],
-        "recent": [document_view(d) for d in docs[:20]],
+        "processing": [document_view(d, index) for d in docs if d["stage"] in {"processing", "classified"}],
+        "review": [document_view(d, index) for d in docs if d["stage"] == "review"],
+        "recent": [document_view(d, index) for d in docs[:20]],
         "counts": {
             "inbox": len(hopper),
             "processing": sum(1 for d in docs if d["stage"] in {"processing", "classified"}),
@@ -433,7 +549,8 @@ def search(q: str = "", authorization: str | None = Header(default=None)) -> dic
     needle = (q or "").strip()
     if len(needle) < 2:
         return {"query": needle, "count": 0, "documents": []}
-    docs = [document_view(row) for row in search_documents(needle)]
+    index = document_index()
+    docs = [document_view(row, index) for row in search_documents(needle)]
     return {"query": needle, "count": len(docs), "documents": docs}
 
 
@@ -450,15 +567,15 @@ def source(
         raise HTTPException(status_code=404, detail="source not on disk")
     if download:
         return FileResponse(path, filename=path.name, media_type="application/octet-stream")
-    text = read_source_text(path, limit=200_000)
-    truncated = False
+    # One extraction pass (PDF/image text via read_source_text); the old code
+    # re-read the whole file and flagged truncation from raw PDF bytes.
+    full = read_source_text(path, limit=200_001)
+    truncated = len(full) > 200_000
+    text = full[:200_000]
     try:
         size = path.stat().st_size
     except OSError:
         size = 0
-    raw_preview = path.read_bytes()[:200_001].decode("utf-8", errors="replace")
-    if len(raw_preview) > 200_000:
-        truncated = True
     return {
         "status": "ok",
         "doc_id": doc_id,
@@ -508,14 +625,17 @@ def matters(authorization: str | None = Header(default=None)) -> dict[str, Any]:
 @router.get("/matters/{matter_id}")
 def matter(matter_id: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
-    docs = [document_view(row) for row in list_matters(matter_id)]
+    index = document_index()
+    docs = [document_view(row, index) for row in list_matters(matter_id)]
     return {"matter_id": matter_id, "document_count": len(docs), "documents": docs}
 
 
 @router.get("/floor")
-def floor() -> dict[str, Any]:
+def floor(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
     docs = list_documents(80)
-    runs = [floor_run(row) for row in docs]
+    index = document_index()
+    runs = [floor_run(row, index) for row in docs]
     trays = floor_bins(runs)
     payload = {
         "count": len(runs),
@@ -529,7 +649,6 @@ def floor() -> dict[str, Any]:
         "archived": trays["archive"]["count"],
         "observability_provider": resolve_provider_name(),
     }
-    persist_floor(runs)
     return payload
 
 
@@ -538,11 +657,10 @@ def history(limit: int = 200, authorization: str | None = Header(default=None)) 
     _auth(authorization)
     cached = load_floor()
     docs = list_documents(min(max(limit, 1), 500))
-    runs = [floor_run(row) for row in docs]
+    index = document_index()
+    runs = [floor_run(row, index) for row in docs]
     if not runs and cached:
         runs = cached.get("runs") or []
-    for run in runs[:20]:
-        persist_run(run["trace_id"], {"run": run, "spans": list_spans(run["trace_id"])})
     return {
         "count": len(runs),
         "source": "pipeline" if docs else (cached or {}).get("source", "pipeline"),
@@ -570,7 +688,6 @@ def run_detail(doc_id: str, authorization: str | None = Header(default=None)) ->
         "updated_at": row.get("updated_at"),
         "created_at": row.get("created_at"),
     }
-    persist_run(doc_id, payload)
     return payload
 
 
@@ -578,7 +695,8 @@ def run_detail(doc_id: str, authorization: str | None = Header(default=None)) ->
 def metrics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
     docs = list_documents(500)
-    runs = [floor_run(row) for row in docs]
+    index = document_index()
+    runs = [floor_run(row, index) for row in docs]
     stages: dict[str, int] = {}
     for run in runs:
         stage = str(run.get("stage") or "unknown")
@@ -593,7 +711,8 @@ def metrics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
 
 
 @router.get("/hive")
-def hive() -> dict[str, Any]:
+def hive(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
     roster = roster_status()
     inboxes = {name: list_inbox(name, 8) for name in roster}
     board_path = hive_dir() / "board.md"
@@ -619,7 +738,8 @@ def hive_board(authorization: str | None = Header(default=None)) -> dict[str, An
 
 
 @router.get("/console")
-def console() -> dict[str, Any]:
+def console(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    _auth(authorization)
     return {"events": recent(120)}
 
 
@@ -781,7 +901,8 @@ def datasets_pull(body: HubPullBody | None = None, authorization: str | None = H
 @router.get("/failed")
 def failed_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
-    docs = [document_view(row) for row in list_documents_by_stage("failed")]
+    index = document_index()
+    docs = [document_view(row, index) for row in list_documents_by_stage("failed")]
     return {"count": len(docs), "documents": docs}
 
 
@@ -808,7 +929,8 @@ def archive_list(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     _auth(authorization)
-    docs = [document_view(row) for row in list_documents_by_stage("archived")]
+    index = document_index()
+    docs = [document_view(row, index) for row in list_documents_by_stage("archived")]
     if reconsider:
         docs = [doc for doc in docs if doc.get("needs_reconsideration")]
     return {
@@ -821,8 +943,9 @@ def archive_list(
 @router.get("/reconsider")
 def reconsider_list(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     _auth(authorization)
+    index = document_index()
     docs = [
-        document_view(row)
+        document_view(row, index)
         for row in list_documents_by_stage("archived")
         if enrich_row(row)["needs_reconsideration"]
     ]
@@ -902,13 +1025,22 @@ def ops_sweep(authorization: str | None = Header(default=None)) -> dict[str, Any
     return boss_sweep()
 
 
+def fixtures_dir() -> Path:
+    """``MAILROOM_FIXTURES_DIR``, else the checkout's ``fixtures/samples``."""
+    raw = os.environ.get("MAILROOM_FIXTURES_DIR", "").strip()
+    if raw:
+        return Path(raw).expanduser()
+    return Path(__file__).resolve().parents[3] / "fixtures" / "samples"
+
+
 @router.post("/demo")
-def demo(body: DemoBody | None = None) -> dict[str, Any]:
+def demo(body: DemoBody | None = None, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     """Drop fixture samples onto the floor (mock LLM, no keys)."""
+    _auth(authorization)
     body = body or DemoBody()
-    root = Path(__file__).resolve().parents[3] / "fixtures" / "samples"
-    if not root.exists():
-        raise HTTPException(status_code=500, detail="fixtures missing")
+    root = fixtures_dir()
+    if not root.is_dir():
+        raise HTTPException(status_code=503, detail=f"demo fixtures not found at {root} (set MAILROOM_FIXTURES_DIR)")
     files = sorted(root.glob("*.txt"))
     if body.sample != "all":
         files = [p for p in files if body.sample in p.name]

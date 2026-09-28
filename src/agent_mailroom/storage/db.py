@@ -106,6 +106,23 @@ CREATE TABLE IF NOT EXISTS field_scores (
 """
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """``with connect() as conn`` commits/rolls back *and closes*.
+
+    Plain sqlite3 connections only end the transaction on ``__exit__``; every
+    ``with connect()`` in the catalog leaked a file handle until GC.
+    """
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
+_initialized: set[str] = set()
+
+
 def db_path() -> Path:
     return base_dir() / "mailroom.db"
 
@@ -116,7 +133,7 @@ def connect() -> sqlite3.Connection:
     last_error: Exception | None = None
     for attempt in range(8):
         try:
-            conn = sqlite3.connect(path, timeout=10, check_same_thread=False)
+            conn = sqlite3.connect(path, timeout=10, check_same_thread=False, factory=_ClosingConnection)
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA journal_mode = WAL")
@@ -132,12 +149,29 @@ def locked() -> threading.Lock:
     return _DB_LOCK
 
 
-def init_db() -> None:
+def init_db(*, force: bool = False) -> None:
+    """Create/migrate the schema once per database path (it ran on every
+    catalog read — an executescript + PRAGMA table_info per request)."""
+    key = str(db_path())
+    if not force and key in _initialized and Path(key).exists():
+        return
     with _DB_LOCK:
         with connect() as conn:
             conn.executescript(SCHEMA)
             _ensure_document_judgment_columns(conn)
             conn.commit()
+        _initialized.add(key)
+
+
+def ping() -> bool:
+    """Real health probe: open the catalog and run a trivial query."""
+    try:
+        init_db()
+        with connect() as conn:
+            conn.execute("SELECT 1 FROM documents LIMIT 1").fetchall()
+        return True
+    except Exception:
+        return False
 
 
 def _ensure_document_judgment_columns(conn: sqlite3.Connection) -> None:

@@ -21,7 +21,7 @@ export const ROSTER_CAST = {
   contracts_specialist: "dwight",
   corporate_records_specialist: "angela",
   correspondence_specialist: "jim",
-  compliance_specialist: "toby",
+  merger_agreement_specialist: "toby",
   insurance_claims_specialist: "meredith",
   judge: "oscar",
   arbiter: "stanley",

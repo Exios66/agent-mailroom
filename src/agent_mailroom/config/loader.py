@@ -67,6 +67,13 @@ def specialist_for(doc_type: str) -> str:
     return "contracts_specialist"
 
 
+def field_types(doc_type: str | None) -> dict[str, str]:
+    for row in taxonomy().get("doc_classes") or []:
+        if row.get("key") == doc_type:
+            return dict(row.get("field_types") or {})
+    return {}
+
+
 def stamp_color(doc_type: str | None) -> str:
     if not doc_type:
         return "#a09f9f"
@@ -90,10 +97,71 @@ def llm_provider_name() -> str:
     return requested_provider()
 
 
+_HARNESS_KEYS = (
+    "provider", "model", "temperature", "max_tokens", "max_input_chars",
+    "reasoning_effort", "procedural",
+)
+
+
 def agent_config(name: str) -> dict[str, Any]:
+    """Per-agent harness from the taxonomy (llm-mailroom agent config shape).
+
+    It used to return only provider/model/role — and the roster carried no
+    model — so every agent ran on the global default with a hard-coded
+    temperature and no reasoning setting.
+    """
     meta = agent_roster().get(name) or {}
+    cfg: dict[str, Any] = {key: meta.get(key) for key in _HARNESS_KEYS}
+    cfg["role"] = meta.get("role")
+    return cfg
+
+
+def model_map(provider: str) -> dict[str, str]:
+    """OpenRouter model id -> local runtime tag for vllm / ollama / llamafile."""
+    raw = taxonomy().get(f"{provider}_model_map") or {}
+    return {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+
+
+def _num(raw: dict, key: str, default: float) -> float:
+    """Configured number, default only when absent/invalid (``x or default``
+    turned a deliberate 0 — e.g. ``base_delay: 0`` — into the default)."""
+    value = raw.get(key)
+    if value is None or isinstance(value, bool):
+        return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def llm_retry() -> dict[str, float]:
+    raw = taxonomy().get("llm_retry") or {}
     return {
-        "provider": meta.get("provider"),
-        "model": meta.get("model"),
-        "role": meta.get("role"),
+        "max_attempts": max(1, int(_num(raw, "max_attempts", 5))),
+        "base_delay": max(0.0, _num(raw, "base_delay", 1.0)),
+        "rate_limit_base_delay": max(0.0, _num(raw, "rate_limit_base_delay", 8.0)),
+        "max_delay": max(0.0, _num(raw, "max_delay", 60.0)),
+        "jitter": max(0.0, _num(raw, "jitter", 0.3)),
     }
+
+
+def run_limits() -> dict[str, float]:
+    raw = taxonomy().get("run_limits") or {}
+    return {
+        "llm_call_timeout_seconds": _num(raw, "llm_call_timeout_seconds", 120),
+        "deadline_seconds": _num(raw, "deadline_seconds", 3600),
+    }
+
+
+def cost_models() -> dict[str, tuple[float, float]]:
+    out: dict[str, tuple[float, float]] = {}
+    for model, prices in (taxonomy().get("cost_models") or {}).items():
+        if isinstance(prices, dict):
+            try:
+                out[str(model)] = (
+                    float(prices.get("input_per_million", 0.0)),
+                    float(prices.get("output_per_million", 0.0)),
+                )
+            except (TypeError, ValueError):
+                continue
+    return out

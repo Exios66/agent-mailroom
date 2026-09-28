@@ -29,10 +29,19 @@ def main() -> int:
         expected = golden.get(row["doc_id"]) or golden.get(row["original_filename"])
         if not expected:
             continue
-        score = score_extraction(row.get("extracted_data"), expected, doc_id=row["doc_id"])
-        results.append({"doc_id": row["doc_id"], "filename": row["original_filename"], **score})
+        # Score with the document's own class field map (every row used to be
+        # scored as a contract, so claims/correspondence fields got the wrong
+        # scorers). A golden entry may pin the class with "doc_type".
+        doc_class = (expected.get("doc_type") if isinstance(expected, dict) else None) or row.get("doc_type")
+        gold = {k: v for k, v in expected.items() if k != "doc_type"} if isinstance(expected, dict) else {}
+        score = score_extraction(row.get("extracted_data"), gold, doc_id=row["doc_id"], doc_class=doc_class)
+        results.append({"doc_id": row["doc_id"], "filename": row["original_filename"], "doc_type": doc_class, **score})
     aggregate = round(sum(r["aggregate"] for r in results) / len(results), 4) if results else 0.0
-    print(json.dumps({"evaluated": len(results), "aggregate": aggregate, "documents": results}, indent=2))
+    by_class: dict[str, list[float]] = {}
+    for r in results:
+        by_class.setdefault(str(r.get("doc_type") or "unknown"), []).append(float(r["aggregate"]))
+    per_class = {k: {"n": len(v), "aggregate": round(sum(v) / len(v), 4)} for k, v in sorted(by_class.items())}
+    print(json.dumps({"evaluated": len(results), "aggregate": aggregate, "by_class": per_class, "documents": results}, indent=2))
     return 0
 
 

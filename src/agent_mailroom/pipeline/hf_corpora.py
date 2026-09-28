@@ -16,6 +16,11 @@ ORG = "Lucius-Morningstar"
 # immutability: historical traces carry source-docclass-merged).
 FULL_CORPUS_ID = f"{ORG}/mailroom-dataset"
 EXAMPLES_ID = f"{ORG}/docclass-pilot"
+# Pinned dataset revision (llm-mailroom 0.7.1 / llm-dojo-scoring 0.16+).
+# v9.1 publishes row-level ``gt_fields.gt_presence`` and context-window bands.
+FULL_CORPUS_REVISION = "v9.1"
+CORPUS_REVISION = FULL_CORPUS_REVISION
+CORPUS_REVISION_SHA = "ed7576b676343e0b402ec5412cded301e629bdee"
 
 HUB_CLASSES: tuple[str, ...] = (
     "contract",
@@ -38,8 +43,11 @@ CORPORA: dict[str, dict[str, Any]] = {
         "text_field": "doc_text",
         "default_config": "default",
         "default_split": "train",
+        "splits": {"train": 2979, "test": 323},
+        "revision": CORPUS_REVISION,
+        "revision_sha": CORPUS_REVISION_SHA,
         "source_tag": "source-docclass-merged",
-        "note": "mailroom-dataset v9 (3,302 rows; successor of the frozen v8 mailroom-corpus).",
+        "note": "mailroom-dataset v9.1 (3,302 rows: 2,979 train / 323 test; successor of the frozen v8 mailroom-corpus).",
     },
     "docclass-pilot": {
         "slug": "docclass-pilot",
@@ -54,7 +62,7 @@ CORPORA: dict[str, dict[str, Any]] = {
         "default_config": "ground_truth",
         "default_split": "train",
         "source_tag": "source-docclass-pilot",
-        "note": "Stratified slice of mailroom-dataset v9 (successor of the frozen v8 mailroom-corpus) — safest pile for the floor.",
+        "note": "Stratified slice of mailroom-dataset v9.1 (successor of the frozen v8 mailroom-corpus) — safest pile for the floor.",
     },
     "enron-correspondence-dedup": {
         "slug": "enron-correspondence-dedup",
@@ -136,6 +144,10 @@ CORPORA: dict[str, dict[str, Any]] = {
 _ALIASES = {
     "v5": "docclass-merged",
     "v7": "docclass-merged",
+    "v8": "docclass-merged",
+    "v9": "docclass-merged",
+    "v9.1": "docclass-merged",
+    "mailroom-dataset": "docclass-merged",
     "full": "docclass-merged",
     "merged": "docclass-merged",
     "corpus": "docclass-merged",
@@ -156,8 +168,11 @@ def pipeline_corpora() -> list[dict[str, Any]]:
     return [dict(row) for row in CORPORA.values() if row.get("pipeline")]
 
 
+DEFAULT_CORPUS = "docclass-merged"
+
+
 def resolve_corpus(name: str | None) -> dict[str, Any]:
-    raw = (name or "docclass-pilot").strip()
+    raw = (name or DEFAULT_CORPUS).strip()
     if raw.startswith(f"{ORG}/"):
         raw = raw.split("/", 1)[1]
     slug = _ALIASES.get(raw, raw)
@@ -168,7 +183,7 @@ def resolve_corpus(name: str | None) -> dict[str, Any]:
 
 
 def adapt_hub_row(row: dict[str, Any], corpus: dict[str, Any] | None = None) -> dict[str, Any]:
-    corp = corpus or resolve_corpus("docclass-pilot")
+    corp = corpus or resolve_corpus(DEFAULT_CORPUS)
     shape = corp.get("row_shape") or "docclass"
     data = dict(row or {})
     if shape == "braintrust_mirror":

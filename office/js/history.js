@@ -1,4 +1,4 @@
-import { getJSON } from "./api.js?v=mailroom9";
+import { getJSON } from "./api.js?v=mailroom10";
 
 export const HistoryView = (() => {
   const listEl = () => document.getElementById("history-list");

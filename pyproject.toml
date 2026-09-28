@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-mailroom"
-version = "0.2.0"
+version = "0.3.0"
 description = "The Mailroom — llm-mailroom v0.7.1 pipeline on a walking office floor"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,8 +18,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "httpx>=0.27",
     "python-multipart>=0.0.9",
-    # Same pin as llm-mailroom v0.7.1 (KANBAN-061 shim over shared engine).
-    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.15.0",
+    # Same pin as llm-mailroom 0.7.1 @959bb0b (KANBAN-061 shim over shared engine).
+    "llm-dojo-scoring @ git+https://github.com/Exios66/llm-dojo-scoring.git@v0.16.0",
 ]
 
 [project.optional-dependencies]
@@ -48,14 +48,13 @@ mailroom-tui = "agent_mailroom.tui.mailroom_console:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-agent_mailroom = ["config/*.yaml"]
+# prompts.json is the verbatim upstream prompt mirror — without it a wheel
+# install fell back to nothing. office/ and fixtures/ live outside src/;
+# non-editable installs point MAILROOM_OFFICE_DIR / MAILROOM_FIXTURES_DIR at
+# them (the Docker image keeps the checkout layout).
+agent_mailroom = ["config/*.yaml", "agents/*.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
-
-# Monorepo dev: resolve the shared scoring engine from the workspace instead
-# of the release git pin above. Plain `pip install .` keeps using the pin.
-[tool.uv.sources]
-llm-dojo-scoring = { workspace = true }

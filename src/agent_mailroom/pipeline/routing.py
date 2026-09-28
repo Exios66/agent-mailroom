@@ -18,11 +18,23 @@ def _conf(state: RunState) -> dict:
     return confidence(state.doc_type)
 
 
+def _budget(cfg: dict, key: str, default: int) -> int:
+    """Integer budget where 0 is a real value (``or default`` made retries
+    impossible to disable)."""
+    value = cfg.get(key)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def after_classify(state: RunState, *, retry: bool = False) -> str:
     cfg = _conf(state)
     doc_type = state.doc_type or "unknown"
     score = state.classification_confidence or 0.0
-    retry_max = int(cfg.get("retry_max", 2) or 2)
+    retry_max = _budget(cfg, "retry_max", 2)
     if doc_type not in extractable_types():
         return HUMAN
     if score >= cfg["high"]:
@@ -47,7 +59,7 @@ def after_review_classify(state: RunState) -> str:
 
 def after_extract(state: RunState) -> str:
     cfg = _conf(state)
-    retry_max = int(cfg.get("retry_max", 2) or 2)
+    retry_max = _budget(cfg, "retry_max", 2)
     if state.conflict_detected:
         return "boss_escalation"
     score = state.extraction_confidence or 0.0
@@ -62,11 +74,14 @@ def after_extract(state: RunState) -> str:
 
 
 def after_judge(state: RunState) -> str:
-    verdict = (state.judge_verdict or "").lower()
-    if verdict in {"", "none", "skipped", "complete"}:
+    # Fail closed: only an explicit "complete" (or a skipped judge) reaches the
+    # report. A missing / unparseable verdict ("judge_error") used to route
+    # straight to compile_report — the quality gate failed open.
+    verdict = (state.judge_verdict or "judge_error").lower()
+    if verdict in {"complete", "skipped"}:
         return "compile_report"
     cfg = _conf(state)
-    max_passes = int(cfg.get("judge_max_passes", 3) or 3)
+    max_passes = _budget(cfg, "judge_max_passes", 3)
     if state.judge_pass_count >= max_passes and verdict in {"partial", "incomplete"}:
         return HUMAN
     if verdict in {"partial", "incomplete"}:
@@ -79,7 +94,7 @@ def after_arbiter(state: RunState) -> str:
     if decision == "accept_with_caveats":
         return "compile_report"
     cfg = _conf(state)
-    arbiter_retry_max = int(cfg.get("arbiter_retry_max", 2) or 2)
+    arbiter_retry_max = _budget(cfg, "arbiter_retry_max", 2)
     if decision == "retry_extraction" and state.arbiter_retry_count <= arbiter_retry_max:
         return "retry_extract"
     return HUMAN

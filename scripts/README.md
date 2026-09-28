@@ -12,15 +12,16 @@
 
 | Script | Purpose |
 |:---|:---|
-| `run_floor.py` | Run the office floor simulation |
-| `generate_tileset.py` | Generate tileset assets |
+| `eval_pipeline.py` | Score archived extractions against a golden JSON file, per document class |
 
 ## Usage
 
 ```bash
-cd packages/agent-mailroom
-python scripts/run_floor.py
+python scripts/eval_pipeline.py --golden golden.json --limit 50
 ```
+
+`golden.json` maps a `doc_id` or original filename to the expected fields;
+an entry may pin `"doc_type"` to score with that class's field map.
 
 ## Related Files
 

@@ -1,4 +1,4 @@
-import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom9";
+import { CAST, ROSTER_CAST } from "./cast.js?v=mailroom10";
 import {
   TILE,
   SCALE,
@@ -10,8 +10,8 @@ import {
   tileToPx,
   getDesks,
   getBins,
-} from "./layout.js?v=mailroom9";
-import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom9";
+} from "./layout.js?v=mailroom10";
+import { blitGid, loadTiledOffice, prerenderLayers } from "./tiled.js?v=mailroom10";
 
 export { TILE, SCALE, deskForRun, binForRun, tileToPx, getDesks, getBins };
 
@@ -174,10 +174,12 @@ function drawAvatar(ctx, character, px, py, status, facing, phase) {
 
 function drawBubble(ctx, px, py, text, lift) {
   if (!text) return;
-  const label = text.length > 22 ? `${text.slice(0, 21)}…` : text;
-  ctx.font = "6px monospace";
-  const w = Math.max(32, label.length * 3.4 + 8);
-  const h = 11;
+  const label = text.length > 24 ? `${text.slice(0, 23)}…` : text;
+  ctx.font = "7px monospace";
+  ctx.textBaseline = "alphabetic";
+  // Measure, don't estimate: the old 3.4px/char guess clipped wide glyphs.
+  const w = Math.max(32, Math.ceil(ctx.measureText(label).width) + 8);
+  const h = 12;
   const x = Math.round(Math.max(2, Math.min(layout.cols * TILE - w - 2, px - w / 2)));
   const y = Math.round(Math.max(2, py - 24 - lift));
   ctx.fillStyle = "#1a1320";
@@ -188,7 +190,7 @@ function drawBubble(ctx, px, py, text, lift) {
   ctx.fillRect(Math.round(px - 1), y + h, 2, 2);
   ctx.fillRect(Math.round(px), y + h + 2, 1, 1);
   ctx.fillStyle = "#3d2e4a";
-  ctx.fillText(label, x + 3, y + 7);
+  ctx.fillText(label, x + 4, y + 9);
 }
 
 function drawFurniture(ctx) {
@@ -264,7 +266,7 @@ function trayLabelPos(bin) {
   return { x, y: p.y + lift + offset[1], align };
 }
 
-function drawTray(ctx, bin, pile, hover) {
+function drawTray(ctx, bin, pile, hover, count) {
   const p = tileToPx(bin.tile);
   ctx.fillStyle = "#6b5340";
   ctx.fillRect(p.x - 11, p.y - 2, 22, 11);
@@ -281,13 +283,17 @@ function drawTray(ctx, bin, pile, hover) {
   const label = bin.label || "BIN";
   const pos = trayLabelPos(bin);
   drawFloorLabel(ctx, label, pos.x, pos.y, { tone: "gold", align: pos.align });
-  if (pile?.length) {
-    ctx.fillStyle = "#1a1320";
-    ctx.fillRect(p.x + 6, p.y - 12, 8, 7);
-    ctx.fillStyle = "#f4d35e";
-    ctx.font = "5px monospace";
+  // Server tray counts (the pile only holds the most recent runs).
+  const n = Number.isFinite(count) ? count : (pile?.length || 0);
+  if (n > 0) {
+    const label = n > 99 ? "99+" : String(n);
+    ctx.font = "6px monospace";
     ctx.textBaseline = "alphabetic";
-    ctx.fillText(String(pile.length), p.x + 7, p.y - 7);
+    const bw = Math.ceil(ctx.measureText(label).width) + 4;
+    ctx.fillStyle = "#1a1320";
+    ctx.fillRect(p.x + 6, p.y - 13, bw, 8);
+    ctx.fillStyle = "#f4d35e";
+    ctx.fillText(label, p.x + 8, p.y - 7);
   }
 }
 
@@ -497,6 +503,7 @@ export class OfficeFloor {
     this.runs = new Map();
     this.envelopes = [];
     this.piles = {};
+    this.binCounts = {};
     this.hiveActs = { ...DEFAULT_HIVE_ACTS };
     this.avatars = {};
     this.lastDesk = {};
@@ -569,6 +576,26 @@ export class OfficeFloor {
     this.canvas.width = layout.cols * TILE * SCALE;
     this.canvas.height = layout.rows * TILE * SCALE;
     this.canvas.dataset.theme = layout.source;
+    this.canvas.style.aspectRatio = `${layout.cols} / ${layout.rows}`;
+    this._fit();
+    if (!this._fitObserver && typeof ResizeObserver === "function" && this.canvas.parentElement) {
+      this._fitObserver = new ResizeObserver(() => this._fit());
+      this._fitObserver.observe(this.canvas.parentElement);
+    }
+  }
+
+  // Integer multiples (2x, 3x) of the tile grid keep pixels crisp when they
+  // fit; between 1x and 2x the canvas fills the column (from the 2x
+  // backing store) instead of sitting at a postage-stamp 1x, and phones get
+  // a fractional fit instead of horizontal scrolling.
+  _fit() {
+    const wrap = this.canvas.parentElement;
+    if (!wrap) return;
+    const base = layout.cols * TILE;
+    const avail = Math.max(0, wrap.clientWidth - 24);
+    const k = Math.floor(avail / base);
+    const width = k >= 2 ? Math.min(k, 3) * base : Math.min(avail, 2 * base);
+    this.canvas.style.width = `${Math.max(160, Math.round(width))}px`;
   }
 
   setHiveActs(acts) {
@@ -603,8 +630,10 @@ export class OfficeFloor {
         if (agent) busy[agent] = run;
       }
     }
+    this.binCounts = {};
     if (binIndex) {
       for (const [key, payload] of Object.entries(binIndex)) {
+        if (Number.isFinite(payload?.count)) this.binCounts[key] = payload.count;
         if (!piles[key]) piles[key] = [];
         const have = new Set(piles[key].map((row) => row.doc_id));
         for (const row of payload.documents || []) {
@@ -734,7 +763,7 @@ export class OfficeFloor {
     drawRoomPlates(ctx);
 
     for (const [key, bin] of Object.entries(getBins())) {
-      drawTray(ctx, bin, this.piles[key] || [], this.hover === `bin:${key}`);
+      drawTray(ctx, bin, this.piles[key] || [], this.hover === `bin:${key}`, this.binCounts[key]);
     }
 
     for (const [key, desk] of Object.entries(getDesks())) {
@@ -832,7 +861,10 @@ export class OfficeFloor {
       const t = Math.min(1, env.t);
       const ease = t * t * (3 - 2 * t);
       const px = env.from[0] * TILE + 8 + (env.to[0] * TILE + 8 - (env.from[0] * TILE + 8)) * ease;
-      const py = env.from[1] * TILE + 8 + (env.to[1] * TILE + 8 - (env.from[1] * TILE + 8)) * ease;
+      // Same arc the renderer draws — hit-testing the straight chord missed
+      // envelopes mid-flight by up to 18px.
+      const py = env.from[1] * TILE + 8 + (env.to[1] * TILE + 8 - (env.from[1] * TILE + 8)) * ease
+        - Math.sin(Math.PI * t) * 18;
       if (Math.abs(x - px) < 10 && Math.abs(y - py) < 10) return env;
     }
     return null;
@@ -885,7 +917,10 @@ export class OfficeFloor {
 
   replay(runData) {
     this.clearReplayTimers();
-    const replayId = runData.trace_id || runData.doc_id;
+    // /v1/runs/{id} nests the run under ``run``; reading the top level left
+    // filename/doc_type/stage undefined, so replays flew a blank envelope.
+    const run = runData.run || runData;
+    const replayId = runData.trace_id || run.trace_id || run.doc_id;
     if (!replayId) return;
     const spanToStage = {
       "intake-document": "intake",
@@ -893,10 +928,13 @@ export class OfficeFloor {
       "extract-fields": "extract",
       "judge-verify": "judge_verify",
       "arbitrate-verdict": "arbiter",
+      "adjudicate-conflict": "boss",
+      "route-for-review": "review",
       "compile-report": "report",
+      "write-catalog": "catalog",
       "archive-document": "archived",
     };
-    let sequence = (runData.routing_path || []).slice();
+    let sequence = (runData.routing_path || run.routing_path || []).slice();
     const spans = runData.spans || [];
     if (spans.length) {
       sequence = spans
@@ -905,10 +943,12 @@ export class OfficeFloor {
     }
     if (!sequence.length) sequence = ["intake", "classify", "extract", "archive", "archived"];
     const baseRun = {
+      ...run,
       doc_id: replayId,
       trace_id: replayId,
-      filename: runData.filename,
-      doc_type: runData.doc_type,
+      filename: run.filename,
+      doc_type: run.doc_type,
+      stamp: run.stamp,
       stage: sequence[0],
       routing_path: sequence,
     };
@@ -929,7 +969,7 @@ export class OfficeFloor {
     const endTimer = setTimeout(() => {
       const current = this.runs.get(replayId);
       if (current) {
-        current.stage = runData.stage || "archived";
+        current.stage = run.stage || "archived";
         this.runs.set(replayId, current);
       }
     }, delay + 400);

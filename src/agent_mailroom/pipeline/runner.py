@@ -20,7 +20,7 @@ from agent_mailroom.pipeline.bins import (
     review_dir,
     write_manifest,
 )
-from agent_mailroom.observability.tracing import span_context
+from agent_mailroom.observability.tracing import pipeline_trace, span_context
 from agent_mailroom.pipeline.events import emit
 from agent_mailroom.pipeline.failures import (
     ABORT_CLASSES,
@@ -180,9 +180,13 @@ STAGE_SPAN = {
     "judge_verify": "judge-verify",
     "arbiter": "arbitrate-verdict",
     "boss_escalation": "adjudicate-conflict",
+    "human_review": "route-for-review",
     "compile_report": "compile-report",
+    "catalog_write": "write-catalog",
     "archive": "archive-document",
 }
+
+SAFETY_CAP = 40
 
 
 def _run_node(state: RunState, node: str, fn) -> RunState:
@@ -205,11 +209,29 @@ def run_document(
     doc_id: str | None = None,
     resume: RunState | None = None,
 ) -> RunState:
+    """One ``document-pipeline`` CHAIN per document (llm-mailroom contract);
+    every node span nests under it."""
+    doc_id = (resume.doc_id if resume else None) or doc_id or str(uuid4())
+    with pipeline_trace(
+        name="document-pipeline",
+        doc_id=doc_id,
+        matter_id=(resume.matter_id if resume else matter_id),
+        metadata={"resume": bool(resume)},
+    ):
+        return _run_graph(file_path, matter_id=matter_id, doc_id=doc_id, resume=resume)
+
+
+def _run_graph(
+    file_path: Path,
+    *,
+    matter_id: str,
+    doc_id: str,
+    resume: RunState | None,
+) -> RunState:
     ensure_bins()
     if resume:
         state = resume
     else:
-        doc_id = doc_id or str(uuid4())
         dest = processing_dir(doc_id) / file_path.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         if file_path.resolve() != dest.resolve():
@@ -235,7 +257,7 @@ def run_document(
 
     node = "extract" if state.resume_extraction else "intake"
     safety = 0
-    while node and node != routing.END and safety < 40:
+    while node and node != routing.END and safety < SAFETY_CAP:
         safety += 1
         state.graph_node = node
         state.routing_path.append(STAGE_FOR_NODE.get(node, node))
@@ -321,7 +343,8 @@ def run_document(
             node = routing.after_boss(state)
             continue
         if node == "human_review":
-            return park_for_review(state)
+            with span_context(state.doc_id, STAGE_SPAN[node], state=state):
+                return park_for_review(state)
         if node == "compile_report":
             try:
                 state = _run_node(state, node, lambda: nodes.node_report(state))
@@ -343,14 +366,21 @@ def run_document(
             node = "catalog_write" if state.report else "human_review"
             continue
         if node == "catalog_write":
-            _persist(state)
+            with span_context(state.doc_id, STAGE_SPAN[node], state=state):
+                _persist(state)
             _broadcast(state, node, actor)
             node = "archive"
             continue
         if node == "archive":
-            return archive_document(state)
+            with span_context(state.doc_id, STAGE_SPAN[node], state=state):
+                return archive_document(state)
         raise RuntimeError(f"unknown node {node}")
 
+    if node and node != routing.END:
+        # The loop cap used to fall through and return a run stuck in
+        # ``processing`` forever (file still in the processing bin).
+        state.escalation_reason = f"safety cap: {SAFETY_CAP} graph steps without reaching END (last node {node})"
+        return park_for_review(state)
     return state
 
 
@@ -372,6 +402,7 @@ def park_for_review(state: RunState) -> RunState:
     _audit(state, "routed_to_review", "boss", {"reason": state.escalation_reason})
     _persist(state, stage=PipelineStage.REVIEW)
     _broadcast(state, "human_review", "boss")
+    _cache_terminal(state)
     return state
 
 
@@ -418,7 +449,24 @@ def archive_document(state: RunState) -> RunState:
             "report": state.report,
         }
     )
+    _cache_terminal(state)
     return state
+
+
+def _cache_terminal(state: RunState) -> None:
+    """Snapshot a finished run to the trace cache (GET routes no longer write
+    it on every poll). Best effort — never fails the run."""
+    try:
+        from agent_mailroom.api.present import floor_run
+        from agent_mailroom.observability.spans import list_spans
+        from agent_mailroom.observability.trace_cache import persist_run
+        from agent_mailroom.storage.catalog import get_document
+
+        row = get_document(state.doc_id)
+        if row:
+            persist_run(state.doc_id, {"trace_id": state.doc_id, "run": floor_run(row), "spans": list_spans(state.doc_id)})
+    except Exception:
+        logger.warning("trace_cache_write_failed", exc_info=True)
 
 
 def fail_document(state: RunState, reason: str, *, failure_class: str | None = None) -> RunState:
@@ -455,6 +503,7 @@ def fail_document(state: RunState, reason: str, *, failure_class: str | None = N
             "routing_path": list(state.routing_path),
         }
     )
+    _cache_terminal(state)
     return state
 
 
@@ -468,9 +517,9 @@ def resume_from_review(doc_id: str, *, doc_type: str | None = None) -> RunState:
     parked = next(review_dir().glob(f"{doc_id}--*"), None)
     if parked is None:
         raise FileNotFoundError(f"no parked review file for {doc_id}")
-    work = processing_dir(doc_id) / row["original_filename"]
-    work.parent.mkdir(parents=True, exist_ok=True)
-    work.write_bytes(parked.read_bytes())
+    # Move (not copy): a leftover review copy kept the doc "parked" after it
+    # archived, and a second resume ran it twice.
+    work = move_file(parked, processing_dir(doc_id), row["original_filename"])
     state = RunState(
         doc_id=doc_id,
         matter_id=row["matter_id"],

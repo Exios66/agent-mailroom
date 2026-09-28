@@ -3,174 +3,195 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self' ws: wss:; worker-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="color-scheme" content="light dark">
   <title>The Mailroom</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom9">
-  <link rel="stylesheet" href="/office/css/office.css?v=mailroom9">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/office/css/tokens.css?v=mailroom10">
+  <link rel="stylesheet" href="/office/css/office.css?v=mailroom10">
   <link rel="icon" href="/office/favicon.svg" type="image/svg+xml">
 </head>
 <body>
+  <a class="skip-link" href="#panel">Skip to the side panel</a>
   <header class="chrome">
-    <div class="brand">THE MAILROOM<small>classify · extract · judge · archive</small></div>
-    <div class="nav-wrap">
-      <nav class="tabs tabs-mailroom" id="tabs" data-testid="office-tabs" aria-label="Mailroom">
-        <span class="tab-group-label">Mailroom</span>
-        <button data-tab="floor" data-testid="tab-floor" class="active">Floor</button>
-        <button data-tab="inbox" data-testid="tab-inbox">Inbox <span class="badge" data-badge="inbox" hidden>0</span></button>
-        <button data-tab="review" data-testid="tab-review">Review <span class="badge" data-badge="review" hidden>0</span></button>
-        <button data-tab="archive" data-testid="tab-archive">Archive <span class="badge" data-badge="archive" hidden>0</span></button>
-        <button data-tab="failed" data-testid="tab-failed">Returns <span class="badge" data-badge="failed" hidden>0</span></button>
-      </nav>
-      <nav class="tabs tabs-ops" aria-label="Operations">
-        <span class="tab-group-label">Ops</span>
-        <button data-tab="matters" data-testid="tab-matters">Matters</button>
-        <button data-tab="datasets" data-testid="tab-datasets">Datasets</button>
-        <button data-tab="topics" data-testid="tab-topics">Topics</button>
-        <button data-tab="hive" data-testid="tab-hive">Hive</button>
-        <button data-tab="metrics" data-testid="tab-metrics">Metrics</button>
-        <button data-tab="history" data-testid="tab-history">History</button>
-        <button data-tab="console" data-testid="tab-console">Console</button>
-      </nav>
+    <div class="brand">
+      <span class="wordmark">THE MAILROOM</span>
+      <small>classify · extract · judge · archive</small>
+    </div>
+    <div class="nav-wrap" data-testid="office-tabs">
+      <div class="tabs tabs-mailroom" id="tabs" role="tablist" aria-label="Mailroom">
+        <span class="tab-group-label" aria-hidden="true">Mailroom</span>
+        <button type="button" role="tab" id="tab-floor" aria-controls="view-floor" aria-selected="true" data-tab="floor" data-testid="tab-floor" class="active">Floor</button>
+        <button type="button" role="tab" id="tab-inbox" aria-controls="view-inbox" aria-selected="false" tabindex="-1" data-tab="inbox" data-testid="tab-inbox">Inbox <span class="badge" data-badge="inbox" hidden>0</span></button>
+        <button type="button" role="tab" id="tab-review" aria-controls="view-review" aria-selected="false" tabindex="-1" data-tab="review" data-testid="tab-review">Review <span class="badge" data-badge="review" hidden>0</span></button>
+        <button type="button" role="tab" id="tab-archive" aria-controls="view-archive" aria-selected="false" tabindex="-1" data-tab="archive" data-testid="tab-archive">Archive <span class="badge" data-badge="archive" hidden>0</span></button>
+        <button type="button" role="tab" id="tab-failed" aria-controls="view-failed" aria-selected="false" tabindex="-1" data-tab="failed" data-testid="tab-failed">Returns <span class="badge" data-badge="failed" hidden>0</span></button>
+      </div>
+      <div class="tabs tabs-ops" role="tablist" aria-label="Operations">
+        <span class="tab-group-label" aria-hidden="true">Ops</span>
+        <button type="button" role="tab" id="tab-matters" aria-controls="view-matters" aria-selected="false" tabindex="-1" data-tab="matters" data-testid="tab-matters">Matters</button>
+        <button type="button" role="tab" id="tab-datasets" aria-controls="view-datasets" aria-selected="false" tabindex="-1" data-tab="datasets" data-testid="tab-datasets">Datasets</button>
+        <button type="button" role="tab" id="tab-topics" aria-controls="view-topics" aria-selected="false" tabindex="-1" data-tab="topics" data-testid="tab-topics">Topics</button>
+        <button type="button" role="tab" id="tab-hive" aria-controls="view-hive" aria-selected="false" tabindex="-1" data-tab="hive" data-testid="tab-hive">Hive</button>
+        <button type="button" role="tab" id="tab-metrics" aria-controls="view-metrics" aria-selected="false" tabindex="-1" data-tab="metrics" data-testid="tab-metrics">Metrics</button>
+        <button type="button" role="tab" id="tab-history" aria-controls="view-history" aria-selected="false" tabindex="-1" data-tab="history" data-testid="tab-history">History</button>
+        <button type="button" role="tab" id="tab-console" aria-controls="view-console" aria-selected="false" tabindex="-1" data-tab="console" data-testid="tab-console">Console</button>
+      </div>
     </div>
     <div class="chrome-actions">
-      <button class="action" id="brief-btn" data-testid="brief-btn">Brief</button>
-      <button class="action primary" id="demo-btn" data-testid="demo-btn">Demo pile</button>
-      <label class="action upload-btn">
-        Upload
-        <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx" data-testid="upload">
-      </label>
+      <button type="button" class="btn" id="brief-btn" data-testid="brief-btn">Brief</button>
+      <button type="button" class="btn primary" id="demo-btn" data-testid="demo-btn">Demo <span class="label-long">pile</span></button>
+      <button type="button" class="btn" id="upload-btn" data-testid="upload-btn">Upload</button>
+      <input id="upload" type="file" hidden accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tif,.tiff" data-testid="upload">
       <form id="auth-gate" class="auth-gate" hidden data-testid="auth-gate">
-        <input id="auth-token" type="password" placeholder="API token" autocomplete="off" aria-label="API token">
-        <button type="submit" class="action">Unlock</button>
+        <label class="sr-only" for="auth-token">API token</label>
+        <input id="auth-token" type="password" placeholder="API token" autocomplete="off">
+        <button type="submit" class="btn">Unlock</button>
       </form>
     </div>
   </header>
 
   <main class="shell">
-    <section class="floor-wrap">
-      <canvas id="floor" width="1280" height="768" aria-label="Mailroom floor" data-testid="floor-canvas"></canvas>
-      <div class="legend" data-testid="floor-legend">Click a tray, avatar, envelope, or desk · gold thought = live work · maroon office = the boss</div>
+    <section class="floor-wrap" aria-label="Office floor">
+      <canvas id="floor" width="1280" height="768" role="img" aria-label="Mailroom floor. Use the On the floor list in the side panel to select a document with the keyboard." data-testid="floor-canvas"></canvas>
     </section>
-    <aside class="desk">
-      <h2 id="panel-title">Command Center</h2>
+    <aside class="desk" id="panel" tabindex="-1" aria-labelledby="panel-title">
+      <div class="desk-head">
+        <h2 id="panel-title">Command Center</h2>
+        <span class="muted" id="panel-meta" aria-live="off"></span>
+      </div>
       <div class="body">
-        <section class="view active" id="view-floor">
-          <p class="muted">The floor is the mailroom. Trays hold parked filings. Click a crate, desk, or envelope for the inspector — audit chain, source, bin, and conflicts.</p>
-          <form id="lookup-form" class="card">
-            <h3>Lookup</h3>
-            <label>Find a filing <input id="lookup-q" data-testid="lookup-q" placeholder="doc id, matter, filename, class" autocomplete="off"></label>
-            <div class="row"><button type="submit" class="action" data-testid="lookup-btn">Search</button></div>
+        <section class="view active" id="view-floor" role="tabpanel" aria-labelledby="tab-floor">
+          <form id="lookup-form" class="card" role="search">
+            <label for="lookup-q">Find a filing</label>
+            <div class="row" style="margin-top:0">
+              <input id="lookup-q" data-testid="lookup-q" placeholder="doc id, matter, filename, class" autocomplete="off" style="flex:1 1 180px">
+              <button type="submit" class="btn" data-testid="lookup-btn" style="flex:0 0 auto">Search</button>
+            </div>
           </form>
           <div id="lookup-hits" data-testid="lookup-hits"></div>
           <div id="inspect" data-testid="inspect"></div>
+          <h3 class="section-title">On the floor</h3>
+          <ul class="run-list" id="floor-runs" data-testid="floor-runs" aria-label="Documents on the floor"></ul>
+          <details class="card" data-testid="floor-legend-card">
+            <summary>How to read the floor</summary>
+            <p class="muted" data-testid="floor-legend">Click a tray, avatar, envelope, or desk · gold thought = live work · maroon office = the boss</p>
+            <ul class="legend-list">
+              <li>Envelopes fly desk to desk as a document moves through the graph.</li>
+              <li>Tray badges count the filings parked in each bin.</li>
+              <li>Envelope stamp colour = document class.</li>
+            </ul>
+          </details>
         </section>
-        <section class="view" id="view-inbox">
+        <section class="view" id="view-inbox" role="tabpanel" aria-labelledby="tab-inbox">
           <form id="inbox-form" class="card">
             <h3>Hopper</h3>
             <p class="muted">Uploads land in the inbox. The watcher claims each file once.</p>
-            <label>Matter <input id="inbox-matter" value="UPLOAD"></label>
-            <label class="action" style="display:flex;align-items:center;gap:8px;cursor:pointer;width:fit-content;">
-              Drop a filing
-              <input id="inbox-upload" type="file" hidden accept=".txt,.md,.pdf,.docx">
-            </label>
+            <label>Matter <input id="inbox-matter" value="UPLOAD" autocomplete="off"></label>
+            <div class="row">
+              <button type="button" class="btn primary" id="inbox-upload-btn">Choose a filing…</button>
+            </div>
+            <input id="inbox-upload" type="file" hidden accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tif,.tiff">
+            <p class="inline-status" id="inbox-status" role="status"></p>
           </form>
           <div id="inbox-list" data-testid="inbox-list"></div>
         </section>
-        <section class="view" id="view-datasets">
+        <section class="view" id="view-datasets" role="tabpanel" aria-labelledby="tab-datasets">
           <form id="dataset-form" class="card">
             <h3>Lucius Morningstar corpora</h3>
-            <p class="muted">Pull Hub rows onto the inbox. The watcher claims each file once — same path as upload.</p>
+            <p class="muted">Pull Hub rows into the inbox. The watcher claims each file once, the same path as an upload.</p>
             <label>Corpus
               <select id="dataset-corpus" data-testid="dataset-corpus"></select>
             </label>
             <label>Rows <input id="dataset-limit" type="number" min="1" max="25" value="3"></label>
-            <label>Matter <input id="dataset-matter" value="HUB"></label>
+            <label>Matter <input id="dataset-matter" value="HUB" autocomplete="off"></label>
             <div class="row">
-              <button type="submit" class="action primary" data-testid="dataset-pull">Pull onto floor</button>
+              <button type="submit" class="btn primary" data-testid="dataset-pull">Pull onto floor</button>
             </div>
+            <p class="inline-status" id="dataset-status" role="status"></p>
           </form>
           <div id="dataset-list"></div>
         </section>
-        <section class="view" id="view-topics">
+        <section class="view" id="view-topics" role="tabpanel" aria-labelledby="tab-topics">
           <form id="topic-form" class="card">
             <h3>Brief the floor</h3>
             <p class="muted"><b>Queue</b> parks the brief. <b>Launch now</b> delivers an envelope to the desk. Filing-like briefs also enter the pipeline.</p>
-            <label>Subject <input id="topic-subject" name="subject" required placeholder="Northwind unpaid invoices"></label>
-            <label>Matter <input id="topic-matter" name="matter_id" value="MAILROOM"></label>
+            <label>Subject <input id="topic-subject" name="subject" required placeholder="Northwind unpaid invoices" autocomplete="off"></label>
+            <label>Matter <input id="topic-matter" name="matter_id" value="MAILROOM" autocomplete="off"></label>
             <label>Route
-              <select id="topic-route" name="route_to">
-                <option value="boss">Boss</option>
-                <option value="sorter">Sorter</option>
-                <option value="sorter_reviewer">Reviewer</option>
-                <option value="contracts_specialist">Contracts</option>
-                <option value="judge">Judge</option>
-                <option value="archivist">Archivist</option>
-                <option value="reporter">Reporter</option>
+              <select id="topic-route" name="route_to" data-testid="topic-route">
+                <option value="boss">boss</option>
               </select>
             </label>
             <label>Brief <textarea id="topic-body" name="body" rows="6" placeholder="What should the office address?"></textarea></label>
             <label class="check"><input type="checkbox" id="topic-ingest" data-testid="topic-ingest"> File this brief onto the inbox (skip the “looks like a filing” guess)</label>
             <div class="row">
-              <button type="submit" data-action="queue">Queue</button>
-              <button type="submit" class="action primary" data-action="launch">Launch now</button>
+              <button type="submit" class="btn" data-action="queue">Queue</button>
+              <button type="submit" class="btn primary" data-action="launch">Launch now</button>
             </div>
+            <p class="inline-status" id="topic-status" role="status"></p>
           </form>
           <div id="topic-list"></div>
         </section>
-        <section class="view" id="view-review">
-          <p class="section-lead muted">Human siding — approve, record, or requeue parked filings.</p>
+        <section class="view" id="view-review" role="tabpanel" aria-labelledby="tab-review">
+          <p class="section-lead">Human siding: approve, record, complete, reject, or requeue parked filings.</p>
           <div id="review-list" data-testid="review-list"></div>
         </section>
-        <section class="view" id="view-archive">
-          <p class="section-lead muted">Creed's shelves — verify chains and requeue reconsider filings.</p>
-          <div class="row" style="margin-bottom:10px">
-            <label class="check"><input type="checkbox" id="archive-reconsider-only" data-testid="archive-reconsider-only"> Reconsider only</label>
-          </div>
+        <section class="view" id="view-archive" role="tabpanel" aria-labelledby="tab-archive">
+          <p class="section-lead">Creed's shelves: verify audit chains and requeue filings flagged for reconsideration.</p>
+          <label class="check"><input type="checkbox" id="archive-reconsider-only" data-testid="archive-reconsider-only"> Reconsider only</label>
           <div id="archive-list" data-testid="archive-list"></div>
         </section>
-        <section class="view" id="view-failed">
-          <p class="section-lead muted">Returns tray — rejected or failed pipeline runs.</p>
+        <section class="view" id="view-failed" role="tabpanel" aria-labelledby="tab-failed">
+          <p class="section-lead">Returns tray: rejected, aborted, or superseded runs.</p>
           <div id="failed-list" data-testid="failed-list"></div>
         </section>
-        <section class="view" id="view-matters">
-          <p class="section-lead muted">Matter index across the mailroom catalog.</p>
+        <section class="view" id="view-matters" role="tabpanel" aria-labelledby="tab-matters">
+          <p class="section-lead">Matter index across the mailroom catalog.</p>
           <div id="matter-list" data-testid="matter-list"></div>
         </section>
-        <section class="view" id="view-hive">
-          <p class="section-lead muted">Agent mailboxes and the shared blackboard.</p>
+        <section class="view" id="view-hive" role="tabpanel" aria-labelledby="tab-hive">
+          <p class="section-lead">Agent mailboxes and the shared blackboard.</p>
           <div id="hive-list"></div>
         </section>
-        <section class="view" id="view-metrics">
-          <p class="section-lead muted">Floor counts, harnesses, and boss ops.</p>
-          <div id="providers-panel" data-testid="providers-panel"></div>
+        <section class="view" id="view-metrics" role="tabpanel" aria-labelledby="tab-metrics">
+          <p class="section-lead">Floor counts, LLM harnesses, and boss ops.</p>
           <div id="metrics"></div>
+          <div class="row">
+            <button type="button" id="sweep-btn" class="btn">Boss sweep</button>
+            <button type="button" id="recover-btn" class="btn">Recover stuck</button>
+          </div>
+          <p class="inline-status" id="ops-note" role="status"></p>
           <div id="ops-results" data-testid="ops-results"></div>
+          <div id="providers-panel" data-testid="providers-panel"></div>
         </section>
-        <section class="view" id="view-history">
-          <p class="section-lead muted">Recent runs with floor replay.</p>
-          <div class="row" style="margin-bottom:10px">
-            <button id="history-refresh" class="action" data-testid="history-refresh">Refresh history</button>
+        <section class="view" id="view-history" role="tabpanel" aria-labelledby="tab-history">
+          <p class="section-lead">Recent runs with floor replay.</p>
+          <div class="row" style="margin:0 0 var(--s-3)">
+            <button type="button" id="history-refresh" class="btn" data-testid="history-refresh">Refresh history</button>
           </div>
           <div id="history-list" data-testid="history-list"></div>
         </section>
-        <section class="view" id="view-console">
-          <p class="section-lead muted">Live pipeline and hive event stream.</p>
-          <div id="console-log"></div>
+        <section class="view" id="view-console" role="tabpanel" aria-labelledby="tab-console">
+          <p class="section-lead">Live pipeline and hive event stream (newest last).</p>
+          <pre id="console-log" aria-live="off"></pre>
         </section>
       </div>
     </aside>
   </main>
 
   <footer class="statusbar">
-    <span id="lamp">SOURCE: LIVE PIPELINE</span>
+    <span class="lamp" id="lamp" data-state="ok">SOURCE: LIVE PIPELINE</span>
     <span id="counts">0 on the floor</span>
-    <span>Provider: <span id="provider">openrouter</span></span>
-    <span id="theme-lamp" data-testid="theme-lamp">Floor: loading</span>
+    <span class="optional">Provider: <span id="provider">…</span></span>
+    <span class="optional" id="theme-lamp" data-testid="theme-lamp">Floor: loading</span>
+    <span class="spacer"></span>
+    <span class="sr-only" id="live-status" role="status" aria-live="polite" data-testid="live-status"></span>
     <a id="limezu-credit" data-testid="limezu-credit" hidden href="https://limezu.itch.io/moderninteriors" target="_blank" rel="noopener noreferrer">Tiles: LimeZu</a>
   </footer>
+  <div class="toast-region" id="toasts" aria-live="assertive" data-testid="toasts"></div>
 
-  <script type="module" src="/office/js/app.js?v=mailroom9"></script>
+  <script type="module" src="/office/js/app.js?v=mailroom10"></script>
 </body>
 </html>

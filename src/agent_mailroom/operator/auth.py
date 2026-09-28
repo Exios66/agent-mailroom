@@ -21,6 +21,8 @@ router = APIRouter(prefix="/v1/auth", tags=["operator-auth"])
 security = HTTPBearer(auto_error=False)
 
 JWT_ALGORITHM = "HS256"
+DEFAULT_JWT_SECRET = "dev-secret-change-me"
+DEFAULT_PASSWORD = "mailroom"
 _warned_default_secret = False
 
 
@@ -54,7 +56,7 @@ def jwt_secret() -> str:
         or ""
     ).strip()
     if not secret:
-        secret = "dev-secret-change-me"
+        secret = DEFAULT_JWT_SECRET
         if not _warned_default_secret:
             log.warning("MAILROOM_OPERATOR_JWT_SECRET unset — using local-dev default")
             _warned_default_secret = True
@@ -143,6 +145,12 @@ async def get_current_user(
 ) -> UserProfile:
     if not auth_required():
         if credentials:
+            # A token signed with the published default secret proves nothing
+            # on a public bind.
+            from agent_mailroom.api.security import is_public_bind
+
+            if is_public_bind() and jwt_secret() == DEFAULT_JWT_SECRET:
+                return UserProfile(username="anonymous", role="viewer")
             try:
                 return decode_token(credentials.credentials)
             except HTTPException:
@@ -150,13 +158,38 @@ async def get_current_user(
         return UserProfile(username="anonymous", role="viewer")
     if not credentials:
         raise HTTPException(status_code=401, detail="Missing authorization header")
+    from agent_mailroom.api.security import is_public_bind
+
+    if is_public_bind() and jwt_secret() == DEFAULT_JWT_SECRET:
+        raise HTTPException(status_code=503, detail="set MAILROOM_OPERATOR_JWT_SECRET on a public bind")
     return decode_token(credentials.credentials)
+
+
+def _refuse_public_defaults(row: dict | None) -> None:
+    """Fail closed on a public bind (mirrors The-Mailroom 0.5.0): a token
+    signed with the published dev secret, or the seeded default password,
+    would let anyone on the network mint an admin session."""
+    from agent_mailroom.api.security import is_public_bind
+
+    if not is_public_bind():
+        return
+    if jwt_secret() == DEFAULT_JWT_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="operator login disabled: set MAILROOM_OPERATOR_JWT_SECRET on a public bind",
+        )
+    if row and verify_password(DEFAULT_PASSWORD, row["password_hash"]):
+        raise HTTPException(
+            status_code=503,
+            detail="operator login disabled: change the default operator password on a public bind",
+        )
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest):
     migrate()
     row = lookup_user(req.username)
+    _refuse_public_defaults(row)
     if not row or not verify_password(req.password, row["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(row["username"], row["role"], user_id=row["id"])
