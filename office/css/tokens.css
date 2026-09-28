@@ -1,32 +1,123 @@
+/* The Mailroom design tokens (0.3.0).
+ *
+ * The pixel identity stays in the chrome (maroon + gold, Press Start 2P for
+ * the wordmark and panel titles only). Everything people read (cards, forms,
+ * tables) uses Inter at >= 12px on a 4px spacing grid. Light is the default;
+ * dark follows the OS unless html[data-theme] pins it.
+ */
 :root {
-  --cream-50: #fffdf5;
-  --cream-100: #fff8e7;
-  --cream-200: #f4e9c7;
-  --cream-300: #e8d9a0;
-  --paper-100: #fcfaf0;
-  --paper-200: #f0ead2;
-  --ink-900: #1a1320;
-  --ink-700: #3d2e4a;
-  --ink-500: #6b5878;
-  --ink-300: #a899b5;
-  --ink-100: #d9cfe0;
-  --coral: #d96a62;
-  --coral-light: #f3d3cd;
-  --mint: #5ca97a;
-  --mint-light: #d2e7da;
-  --sky: #4f9faf;
-  --sky-light: #cfe5e9;
-  --lemon: #dcab3c;
-  --lemon-light: #f3e4bc;
-  --lilac: #9482d3;
-  --maroon: #6e1423;
-  --maroon-mid: #b23a4e;
-  --gold: #f4d35e;
-  --wood-light: #e5c896;
-  --wood-dark: #c9a66b;
-  --path: #e8d8b0;
-  --wall: #8b6f47;
+  /* brand */
+  --maroon-900: #3f0b15;
+  --maroon-700: #6e1423;
+  --maroon-500: #a3314a;
+  --gold-400: #f4d35e;
+  --gold-300: #f8e08e;
+  --gold-600: #c9a227;
+  --on-chrome: #fbeec4;
+  /* fixed in both themes: gold fills and the status bar stay dark-on-light / light-on-dark */
+  --on-gold: #1a1320;
+  --statusbar-bg: #1a1320;
+  --statusbar-ink: #e8e0d0;
+
+  /* surfaces */
+  --surface-0: #f7f3e8;
+  --surface-1: #fffdf7;
+  --surface-2: #f1e9d4;
+  --surface-sunk: #e9dfc5;
+  --floor-bg: #1a1320;
+
+  /* ink */
+  --ink-strong: #1a1320;
+  --ink: #2e2338;
+  --ink-muted: #5f5169;
+  --ink-faint: #837690;
+  --border: #d9ceb4;
+  --border-strong: #1a1320;
+
+  /* status: text colours pass 4.5:1 on surface-1; *-bg for chips */
+  --ok: #1f7a4d;
+  --ok-bg: #dcefe3;
+  --warn: #7f5300;
+  --warn-bg: #fbecc6;
+  --danger: #a3243b;
+  --danger-bg: #f7dbe0;
+  --info: #1f5f8b;
+  --info-bg: #d9e9f5;
+  --accent: #2a78d6;
+
+  /* type */
   --font-display: "Press Start 2P", ui-monospace, monospace;
-  --font-ui: Inter, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-ui: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --leading: 1.45;
+
+  /* space (4px grid) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+
+  --radius: 4px;
+  --shadow-card: 0 1px 0 rgba(26, 19, 32, 0.05), 0 1px 3px rgba(26, 19, 32, 0.08);
+  --shadow-pixel: 3px 3px 0 rgba(26, 19, 32, 0.28);
+  --focus-ring: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--accent);
+
+  --panel-width: 400px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #15101b;
+    --surface-1: #1f1827;
+    --surface-2: #2a2133;
+    --surface-sunk: #120d17;
+    --ink-strong: #f7f1e3;
+    --ink: #e8e0d0;
+    --ink-muted: #b8adc2;
+    --ink-faint: #8f849a;
+    --border: #3b3045;
+    --border-strong: #75648a;
+    --ok: #7fd3a3;
+    --ok-bg: #173826;
+    --warn: #f2c86a;
+    --warn-bg: #3a2c0c;
+    --danger: #f5a3b3;
+    --danger-bg: #3e1620;
+    --info: #8cc4ef;
+    --info-bg: #13283a;
+    --accent: #7fb6f0;
+    --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface-0: #15101b;
+  --surface-1: #1f1827;
+  --surface-2: #2a2133;
+  --surface-sunk: #120d17;
+  --ink-strong: #f7f1e3;
+  --ink: #e8e0d0;
+  --ink-muted: #b8adc2;
+  --ink-faint: #8f849a;
+  --border: #3b3045;
+  --border-strong: #75648a;
+  --ok: #7fd3a3;
+  --ok-bg: #173826;
+  --warn: #f2c86a;
+  --warn-bg: #3a2c0c;
+  --danger: #f5a3b3;
+  --danger-bg: #3e1620;
+  --info: #8cc4ef;
+  --info-bg: #13283a;
+  --accent: #7fb6f0;
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
 }

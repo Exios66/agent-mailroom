@@ -83,6 +83,8 @@ def test_electron_security_contract():
         webSecurity: p.webSecurity,
         navOk: s.isAllowedNavigation('http://127.0.0.1:8000/office/', 'http://127.0.0.1:8000'),
         navBad: s.isAllowedNavigation('https://evil.example/steal', 'http://127.0.0.1:8000'),
+        navPrefix: s.isAllowedNavigation('http://127.0.0.1:8000.evil.example/', 'http://127.0.0.1:8000'),
+        navOtherPort: s.isAllowedNavigation('http://127.0.0.1:9999/', 'http://127.0.0.1:8000'),
         extOk: s.isAllowedExternal('https://limezu.itch.io/moderninteriors'),
         extHttp: s.isAllowedExternal('http://limezu.itch.io/moderninteriors'),
         extBad: s.isAllowedExternal('https://evil.example/'),
@@ -97,6 +99,8 @@ def test_electron_security_contract():
     assert data["webSecurity"] is True
     assert data["navOk"] is True
     assert data["navBad"] is False
+    assert data["navPrefix"] is False
+    assert data["navOtherPort"] is False
     assert data["extOk"] is True
     assert data["extHttp"] is False
     assert data["extBad"] is False

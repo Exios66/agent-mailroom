@@ -20,23 +20,22 @@ DISPLAY_STAGE = {
 }
 
 
-def _bin_name(row: dict[str, Any]) -> str | None:
-    loc = locate_document(row["doc_id"])
+def _bin_name(row: dict[str, Any], loc: dict[str, Any]) -> str | None:
     if loc.get("bin"):
         return loc["bin"]
     stage = row.get("stage")
-    if stage in {"inbox", "review", "failed", "archived"}:
-        return stage
-    if stage in {"processing", "classified"}:
+    if stage in {"inbox", "review", "failed", "archived", "processing", "classified"}:
         return stage
     return None
 
 
-def document_view(row: dict[str, Any]) -> dict[str, Any]:
+def document_view(row: dict[str, Any], index: dict[str, dict] | None = None) -> dict[str, Any]:
+    """``index`` (from ``bins.document_index``) lets list endpoints scan the
+    trays once instead of once per row."""
     enriched = enrich_row(row)
-    loc = locate_document(row["doc_id"])
+    loc = locate_document(row["doc_id"], index)
     path = loc.get("path")
-    enriched["bin"] = loc.get("bin") or _bin_name(row)
+    enriched["bin"] = _bin_name(row, loc)
     enriched["bin_path"] = str(path) if path else None
     enriched["stamp"] = stamp_color(row.get("doc_type"))
     enriched["conflict_detail"] = conflict_detail(enriched)
@@ -88,8 +87,8 @@ def floor_bins(runs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def floor_run(row: dict[str, Any]) -> dict[str, Any]:
-    view = document_view(row)
+def floor_run(row: dict[str, Any], index: dict[str, dict] | None = None) -> dict[str, Any]:
+    view = document_view(row, index)
     stage = row.get("graph_node") or row["stage"]
     display = DISPLAY_STAGE.get(stage, stage)
     if row["stage"] in {"archived", "failed", "review", "inbox"}:
@@ -122,9 +121,20 @@ def floor_run(row: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+_BINARY_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"})
+
+
 def read_source_text(path: Path, limit: int = 200_000) -> str:
-    raw = path.read_bytes()
-    text = raw.decode("utf-8", errors="replace")
+    """Readable text for the source pane: extracted PDF/DOCX text (the old
+    code decoded raw PDF bytes as UTF-8), nothing for images."""
+    from agent_mailroom.pipeline.intake import read_document
+
+    if path.suffix.lower() in _BINARY_SUFFIXES:
+        return ""
+    try:
+        text = read_document(path)
+    except Exception:
+        return ""
     if len(text) > limit:
         return text[:limit] + "\n…"
     return text

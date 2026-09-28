@@ -15,13 +15,18 @@ log = logging.getLogger("agent_mailroom.observability.tracing")
 _flush_ok = 0
 _flush_failures = 0
 
+# Mirrors llm-mailroom 0.7.1 ``observability/tracing.py`` NODE_OBSERVATION_TYPES.
 NODE_OBSERVATION_TYPES = {
+    "document-pipeline": "chain",
     "intake-document": "span",
     "classify-document": "agent",
     "extract-fields": "agent",
     "judge-verify": "evaluator",
     "arbitrate-verdict": "agent",
+    "adjudicate-conflict": "agent",
+    "route-for-review": "span",
     "compile-report": "agent",
+    "write-catalog": "span",
     "archive-document": "span",
 }
 
@@ -84,43 +89,69 @@ def span_context(
     state: Any = None,
     observation_type: str | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Record a span locally and optionally mirror to Langfuse."""
+    """Record a span locally and optionally mirror to Langfuse.
+
+    The local span is written in ``finally`` so a node that raises still
+    leaves a span (with its error) on the inspector — previously a failing
+    node vanished from the trace entirely.
+    """
     obs_type = observation_type or NODE_OBSERVATION_TYPES.get(name, "span")
     inp = _state_summary(state) if state is not None else {"doc_id": doc_id}
     provider = resolve_provider_name()
     holder: dict[str, Any] = {"output": None}
     started = time.perf_counter()
+    error: BaseException | None = None
     langfuse_span = None
-    if provider == "langfuse":
-        with observation(name, as_type=obs_type, input=inp) as lf_span:
-            langfuse_span = lf_span
+    try:
+        if provider == "langfuse":
+            with observation(name, as_type=obs_type, input=inp) as lf_span:
+                langfuse_span = lf_span
+                try:
+                    yield holder
+                finally:
+                    _finish_langfuse(langfuse_span, name, doc_id, holder, state)
+        else:
             yield holder
-    else:
-        yield holder
-    latency_ms = (time.perf_counter() - started) * 1000.0
-    output = holder.get("output") or (_result_summary(state) if state is not None else None)
-    local_spans.record_span(
-        doc_id,
-        name,
-        observation_type=obs_type,
-        input_data=inp,
-        output_data=output,
-        latency_ms=latency_ms,
-    )
-    if langfuse_span is not None and output is not None:
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        output = holder.get("output") or (_result_summary(state) if state is not None else None)
+        if error is not None:
+            output = {**(output or {}), "error": f"{type(error).__name__}: {error}"[:500]}
         try:
-            langfuse_span.update(output=output)
-        except Exception as exc:
-            log.warning(
-                "langfuse span.update FAILED for %s (doc %s) — the trace's "
-                "output is STALE (local spans still recorded): %s",
-                name,
+            local_spans.record_span(
                 doc_id,
-                exc,
+                name,
+                observation_type=obs_type,
+                input_data=inp,
+                output_data=output,
+                latency_ms=latency_ms,
             )
-    if provider == "phoenix":
-        ensure_phoenix()
-    flush()
+        except Exception:
+            log.warning("local span write failed for %s (doc %s)", name, doc_id, exc_info=True)
+        if provider == "phoenix":
+            ensure_phoenix()
+        flush()
+
+
+def _finish_langfuse(span: Any, name: str, doc_id: str, holder: dict[str, Any], state: Any) -> None:
+    if span is None:
+        return
+    output = holder.get("output") or (_result_summary(state) if state is not None else None)
+    if output is None:
+        return
+    try:
+        span.update(output=output)
+    except Exception as exc:
+        log.warning(
+            "langfuse span.update FAILED for %s (doc %s) — the trace's "
+            "output is STALE (local spans still recorded): %s",
+            name,
+            doc_id,
+            exc,
+        )
 
 
 def flush() -> None:

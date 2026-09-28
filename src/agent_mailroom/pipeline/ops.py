@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_mailroom.hive.mailbox import deliver
-from agent_mailroom.pipeline.bins import locate_document, requeue_stale_processing
+from agent_mailroom.pipeline.bins import locate_document, requeue_stale_processing, write_inbox_meta
 from agent_mailroom.pipeline.reconsider import enrich_row
 from agent_mailroom.schemas.manifest import DocumentManifest, PipelineStage
 from agent_mailroom.storage.catalog import list_documents_by_stage, list_review_queue, stuck_documents, upsert_document
@@ -20,12 +20,25 @@ def recover_stuck(minutes: int = 15) -> list[dict[str, Any]]:
     for row in stuck_documents(minutes):
         loc = locate_document(row["doc_id"])
         path = loc.get("path")
-        if not path or loc.get("bin") not in {"processing", "classified"}:
+        # Only a live processing claim is requeued. The classified bin holds
+        # snapshots (the live file moved on); requeueing one re-ran a copy.
+        if not path or loc.get("bin") != "processing":
             continue
         try:
             dest = requeue_stale_processing(Path(path))
         except OSError:
             continue
+        # Without the sidecar the watcher minted a fresh doc_id and dropped
+        # the matter (DEFAULT), orphaning the catalog row it just reset.
+        write_inbox_meta(
+            dest,
+            {
+                "doc_id": row["doc_id"],
+                "matter_id": row["matter_id"],
+                "source": "recover",
+                "filename": row["original_filename"],
+            },
+        )
         upsert_document(
             DocumentManifest(
                 doc_id=row["doc_id"],

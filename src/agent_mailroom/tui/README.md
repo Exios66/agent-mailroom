@@ -19,9 +19,11 @@ The TUI provides a terminal-based interface:
 ## Usage
 
 ```bash
-cd packages/agent-mailroom
-uv run python -m agent_mailroom.tui
+pip install -e ".[tui]"
+MAILROOM_API_URL=http://127.0.0.1:8000 mailroom-tui
 ```
+
+Send `MAILROOM_API_TOKEN` when the API requires one.
 
 ## Related Files
 

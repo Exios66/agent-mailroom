@@ -52,6 +52,39 @@ def get_client():
 
 
 @contextmanager
+def _guarded(factory, label: str) -> Iterator[Any]:
+    """Enter a Langfuse context without ever swallowing the caller's errors.
+
+    The old ``try: with ...: yield`` / ``except: yield None`` shape caught
+    exceptions raised *inside* the pipeline body and yielded a second time
+    ("generator didn't stop after throw()"), turning every node failure into
+    a RuntimeError. Only enter/exit failures are Langfuse's problem.
+    """
+    try:
+        cm = factory()
+        handle = cm.__enter__()
+    except Exception:
+        log.warning("%s_failed", label, exc_info=True)
+        yield None
+        return
+    try:
+        yield handle
+    except BaseException as exc:
+        try:
+            suppress = cm.__exit__(type(exc), exc, exc.__traceback__)
+        except Exception:
+            log.warning("%s_exit_failed", label, exc_info=True)
+            suppress = False
+        if not suppress:
+            raise
+    else:
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:
+            log.warning("%s_exit_failed", label, exc_info=True)
+
+
+@contextmanager
 def pipeline_trace(
     *,
     name: str,
@@ -63,17 +96,27 @@ def pipeline_trace(
     if client is None:
         yield None
         return
-    try:
-        with client.start_as_current_observation(
+    with _guarded(
+        lambda: client.start_as_current_observation(
             as_type="chain",
             name=name,
-            trace_context={"trace_id": doc_id},
+            trace_context={"trace_id": _trace_id(doc_id)},
             metadata={"matter_id": matter_id, **(metadata or {})},
-        ) as root:
-            yield root
-    except Exception:
-        log.warning("langfuse_pipeline_trace_failed", exc_info=True)
-        yield None
+        ),
+        "langfuse_pipeline_trace",
+    ) as root:
+        yield root
+
+
+def _trace_id(doc_id: str) -> str:
+    """Langfuse v3+ requires 32 lowercase hex chars; uuid4 doc ids qualify
+    once the dashes go. Anything else is hashed deterministically."""
+    import hashlib
+
+    raw = str(doc_id).replace("-", "").lower()
+    if len(raw) == 32 and all(c in "0123456789abcdef" for c in raw):
+        return raw
+    return hashlib.sha256(str(doc_id).encode("utf-8")).hexdigest()[:32]
 
 
 @contextmanager
@@ -82,12 +125,11 @@ def observation(name: str, *, as_type: str = "span", input: dict[str, Any] | Non
     if client is None:
         yield None
         return
-    try:
-        with client.start_as_current_observation(as_type=as_type, name=name, input=input) as span:
-            yield span
-    except Exception:
-        log.warning("langfuse_observation_failed", name=name, exc_info=True)
-        yield None
+    with _guarded(
+        lambda: client.start_as_current_observation(as_type=as_type, name=name, input=input),
+        f"langfuse_observation[{name}]",
+    ) as span:
+        yield span
 
 
 def flush_langfuse() -> None:

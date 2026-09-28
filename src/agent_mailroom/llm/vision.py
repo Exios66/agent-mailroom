@@ -96,11 +96,9 @@ def render_pdf_pages(file_path: Path, cap: int | None = None, dpi: int | None = 
         for idx in range(limit):
             try:
                 page = doc.load_page(idx)
-                # Render at the configured DPI (scaled to ~1.5x); text density
-                # on legal docs is high, so a crisp raster helps the vision
-                # model read clauses, headings and tables. PNG compresses text
-                # pages well (JPEG is smaller only for photo-like scans, and
-                # adds compression artifacts that hurt OCR-style reading).
+                # Render at the configured DPI; text density on legal docs is
+                # high, so a crisp PNG raster helps the vision model read
+                # clauses, headings and tables.
                 zoom = dpi / 72.0
                 mat = fitz.Matrix(zoom, zoom)
                 pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
@@ -109,7 +107,6 @@ def render_pdf_pages(file_path: Path, cap: int | None = None, dpi: int | None = 
                 pages.append(uri)
             except Exception:
                 log.exception("pdf_page_render_failed", extra={"page": idx})
-        doc.close()
         log.info(
             "pdf_pages_rendered",
             extra={"file": file_path.name, "pages": len(pages), "total": page_count,
@@ -119,6 +116,12 @@ def render_pdf_pages(file_path: Path, cap: int | None = None, dpi: int | None = 
     except Exception:
         log.exception("pdf_render_failed_for_vision", extra={"file": str(file_path)})
         return []
+    finally:
+        # The old path only closed on success, leaking the handle on errors.
+        try:
+            doc.close()
+        except Exception:
+            pass
 
 
 def render_image(file_path: Path) -> list[str]:

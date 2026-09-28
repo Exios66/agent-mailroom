@@ -197,7 +197,7 @@ def stuck_documents(minutes: int = 15) -> list[dict[str, Any]]:
                 """
                 SELECT * FROM documents
                 WHERE stage IN ('processing', 'classified', 'inbox')
-                  AND updated_at < datetime('now', ?)
+                  AND julianday(updated_at) < julianday('now', ?)
                 ORDER BY updated_at
                 """,
                 (f"-{int(minutes)} minutes",),

@@ -47,11 +47,8 @@ def resolve_complete_extracted(submitted: Any, parked: Any = None) -> dict[str, 
 
 
 def specialist_schema_keys(doc_type: str) -> frozenset[str]:
-    try:
-        model = get_extraction_schema(doc_type)
-    except KeyError:
-        return frozenset()
-    return frozenset(model.model_fields)
+    model = get_extraction_schema(doc_type)
+    return frozenset(model.model_fields) if model is not None else frozenset()
 
 
 def all_specialist_schema_keys() -> frozenset[str]:
@@ -79,10 +76,9 @@ def validate_operator_extraction(doc_type: str, extracted: dict[str, Any]) -> di
             f"extracted_data fields {foreign} belong to another specialist, "
             f"not {doc_type}"
         )
-    try:
-        model = get_extraction_schema(doc_type)
-    except KeyError as exc:
-        raise ValueError(f"unknown doc_type for complete: {doc_type}") from exc
+    model = get_extraction_schema(doc_type)
+    if model is None:
+        raise ValueError(f"unknown doc_type for complete: {doc_type}")
     try:
         validated = model.model_validate(payload)
     except Exception as exc:

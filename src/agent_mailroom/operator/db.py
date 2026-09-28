@@ -70,6 +70,16 @@ def verify_password(password: str, stored: str) -> bool:
     return False
 
 
+_migrated: set[str] = set()
+
+
+def ensure_migrated() -> None:
+    path = db_path()
+    if str(path) in _migrated and path.exists():
+        return
+    migrate()
+
+
 def migrate() -> Path:
     path = db_path()
     conn = connect()
@@ -108,11 +118,12 @@ def migrate() -> Path:
         conn.commit()
     finally:
         conn.close()
+    _migrated.add(str(path))
     return path
 
 
 def lookup_user(username: str) -> Optional[dict[str, Any]]:
-    migrate()
+    ensure_migrated()
     conn = connect()
     try:
         row = conn.execute("SELECT * FROM ui_users WHERE username = ?", (username,)).fetchone()
@@ -122,6 +133,8 @@ def lookup_user(username: str) -> Optional[dict[str, Any]]:
 
 
 def write_audit(*, action: str, user_id: int | None = None, metadata: dict[str, Any] | None = None) -> None:
+    # ``/v1/auth/logout`` before any login used to hit "no such table: ui_audit".
+    ensure_migrated()
     conn = connect()
     try:
         conn.execute(

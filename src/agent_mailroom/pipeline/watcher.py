@@ -90,17 +90,16 @@ def claim_and_run(path: Path) -> str | None:
             return None
         _claimed.add(key)
     try:
+        # ``finally`` (not try/except/else): the early ``return None`` below
+        # skipped the ``else`` release and leaked the key, so a later file
+        # dropped under the same name was never claimed again.
         if not path.is_file():
             return None
         meta = _meta_for(path)
         doc_id = meta.get("doc_id") or str(uuid4())
         matter_id = meta.get("matter_id") or "DEFAULT"
         claimed = claim_inbox(path, doc_id)
-    except Exception:
-        with _lock:
-            _claimed.discard(key)
-        raise
-    else:
+    finally:
         with _lock:
             _claimed.discard(key)
     emit({"type": "watcher", "filename": path.name, "doc_id": doc_id, "stage": "inbox"})
@@ -124,12 +123,27 @@ def scan_inbox() -> list[str]:
     return started
 
 
-def _loop() -> None:
+_beat_thread: threading.Thread | None = None
+
+
+def _beat() -> None:
+    """Heartbeat on its own thread. The scan loop runs documents inline, so a
+    single multi-minute LLM run used to turn the lamp "stale" while the
+    watcher was perfectly healthy."""
     global _heartbeat
     while not _stop.is_set():
-        _heartbeat = time.time()
+        if _thread and _thread.is_alive():
+            _heartbeat = time.time()
+            try:
+                (base_dir() / "watcher_heartbeat").write_text(str(_heartbeat), encoding="utf-8")
+            except OSError:
+                pass
+        _stop.wait(1.0)
+
+
+def _loop() -> None:
+    while not _stop.is_set():
         try:
-            (base_dir() / "watcher_heartbeat").write_text(str(_heartbeat), encoding="utf-8")
             scan_inbox()
         except Exception:
             emit({"type": "error", "subject": "watcher loop error"})
@@ -137,20 +151,25 @@ def _loop() -> None:
 
 
 def start_watcher() -> None:
-    global _thread
+    global _thread, _beat_thread, _heartbeat
     if not watcher_enabled():
         return
     if _thread and _thread.is_alive():
         return
     _stop.clear()
+    _heartbeat = time.time()
     _thread = threading.Thread(target=_loop, name="inbox-watcher", daemon=True)
     _thread.start()
+    _beat_thread = threading.Thread(target=_beat, name="inbox-watcher-heartbeat", daemon=True)
+    _beat_thread.start()
 
 
 def stop_watcher() -> None:
-    global _thread, _heartbeat
+    global _thread, _beat_thread, _heartbeat
     _stop.set()
-    if _thread and _thread.is_alive():
-        _thread.join(timeout=2.0)
+    for thread in (_thread, _beat_thread):
+        if thread and thread.is_alive():
+            thread.join(timeout=2.0)
     _thread = None
+    _beat_thread = None
     _heartbeat = 0.0

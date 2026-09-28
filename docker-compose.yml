@@ -3,7 +3,12 @@ services:
     build: .
     image: agent-mailroom:local
     ports:
-      - "${MAILROOM_PORT:-8000}:8000"
+      # Host loopback only. The container binds 0.0.0.0 (a "public bind"),
+      # which fails closed without MAILROOM_API_TOKEN; MAILROOM_ALLOW_OPEN=1
+      # below is safe only because of this 127.0.0.1 publish. To expose the
+      # office on a network: set MAILROOM_API_TOKEN, MAILROOM_ALLOW_OPEN=0
+      # and publish "8000:8000".
+      - "127.0.0.1:${MAILROOM_PORT:-8000}:8000"
     env_file:
       - path: .env
         required: false
@@ -12,6 +17,7 @@ services:
       MAILROOM_HOST: "0.0.0.0"
       MAILROOM_PORT: "8000"
       MAILROOM_BASE_DIR: /app/data
+      MAILROOM_ALLOW_OPEN: ${MAILROOM_ALLOW_OPEN:-1}
       # Token rotation (GitGuardian-clean empty passthrough)
       MAILROOM_API_TOKEN: ${MAILROOM_API_TOKEN:-}
       MAILROOM_API_TOKENS: ${MAILROOM_API_TOKENS:-}
@@ -19,7 +25,11 @@ services:
       # Reach Ollama (or other local servers) on the host from the container:
       # OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
     volumes:
-      - ./data:/app/data
+      # Create it first so it is owned by you, not root (the container runs
+      # as uid 10001 and cannot write a root-owned ./data):
+      #   mkdir -p data && sudo chown 10001:10001 data
+      # or drop this bind for the named volume below.
+      - ${MAILROOM_DATA_DIR:-mailroom-data}:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     user: "10001:10001"
@@ -32,3 +42,8 @@ services:
       timeout: 5s
       start_period: 10s
       retries: 5
+
+volumes:
+  # Default: a named volume (created with the image's uid 10001 ownership).
+  # Set MAILROOM_DATA_DIR=./data to bind the host directory instead.
+  mailroom-data:

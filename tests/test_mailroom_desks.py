@@ -109,19 +109,30 @@ def test_ops_recover_requeues_stuck_processing(samples):
     work = processing_dir(state.doc_id) / loc["path"].name
     work.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(loc["path"], work)
+    # Stored the way upsert_document writes it (ISO-8601 with "T" and an
+    # offset). The old fixture used SQLite's "YYYY-MM-DD HH:MM:SS" format,
+    # which masked a text comparison that never matched real rows.
+    from datetime import datetime, timedelta, timezone
+
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
     with locked():
         with connect() as conn:
             conn.execute(
-                "UPDATE documents SET stage='processing', updated_at=datetime('now','-20 minutes') WHERE doc_id=?",
-                (state.doc_id,),
+                "UPDATE documents SET stage='processing', updated_at=? WHERE doc_id=?",
+                (stale, state.doc_id),
             )
             conn.commit()
     from agent_mailroom.pipeline.ops import recover_stuck
+    from agent_mailroom.pipeline.bins import read_inbox_meta
 
     recovered = recover_stuck(minutes=15)
     assert any(item["doc_id"] == state.doc_id for item in recovered)
     assert get_document(state.doc_id)["stage"] == "inbox"
-    assert any(path.name.startswith(state.doc_id) for path in inbox_dir().iterdir() if path.is_file())
+    requeued = [path for path in inbox_dir().iterdir() if path.is_file() and path.name.startswith(state.doc_id) and not path.name.endswith(".meta")]
+    assert requeued
+    meta = read_inbox_meta(requeued[0])
+    assert meta["doc_id"] == state.doc_id
+    assert meta["matter_id"] == "STUCK-1"
 
 
 def test_judge_toggle(monkeypatch):

@@ -55,7 +55,7 @@
     "desk-contracts": { "spawn": "pc-1", "agent": "contracts_specialist", "label": "Dwight", "face": "up" },
     "desk-corporate": { "spawn": "pc-2", "agent": "corporate_records_specialist", "label": "Angela", "face": "up" },
     "desk-correspondence": { "spawn": "pc-3", "agent": "correspondence_specialist", "label": "Jim", "face": "up" },
-    "desk-compliance": { "spawn": "pc-4", "agent": "compliance_specialist", "label": "Toby", "face": "up" },
+    "desk-merger": { "spawn": "pc-4", "agent": "merger_agreement_specialist", "label": "Toby", "face": "up" },
     "desk-claims": { "spawn": "pc-5", "agent": "insurance_claims_specialist", "label": "Meredith", "face": "up" }
   },
   "rooms": [

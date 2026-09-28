@@ -1,7 +1,7 @@
-"""Field scoring — compatibility shim over ``llm-dojo-scoring`` v0.14.0.
+"""Field scoring — compatibility shim over ``llm-dojo-scoring`` v0.16.0.
 
-Pinned to the same release as llm-mailroom v0.7.0
-(``llm-dojo-scoring @ git+…@v0.14.0``). Core scoring lives in the package;
+Pinned to the same release as llm-mailroom 0.7.1 @959bb0b
+(``llm-dojo-scoring @ git+…@v0.16.0``). Core scoring lives in the package;
 this module keeps Agent Mailroom glue:
 
 - taxonomy → ``configure()`` wiring
@@ -111,7 +111,7 @@ def _dojo_version() -> str:
 
         return version("llm-dojo-scoring")
     except Exception:  # pragma: no cover - metadata always present when importable
-        return "0.15.0"
+        return "0.16.0"
 
 
 def get_type_bands() -> dict[str, Any]:
@@ -169,7 +169,7 @@ def score_field(
     if not DOJO_AVAILABLE:
         warnings.warn(
             "llm-dojo-scoring is not installed; install the package pin "
-            "(llm-dojo-scoring @ v0.14.0) for production scoring",
+            "(llm-dojo-scoring @ v0.16.0) for production scoring",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -252,16 +252,17 @@ def score_extraction(
     field_types: dict[str, str] | None = None,
     doc_text: str | None = None,
 ) -> dict[str, Any]:
-    """Score an extraction against gold using llm-dojo-scoring v0.14.0."""
+    """Score an extraction against gold using llm-dojo-scoring v0.16.0."""
     predicted = predicted or {}
     expected = expected or {}
     keys = sorted(
         k for k in (set(predicted) | set(expected)) if not str(k).startswith("_")
     )
     resolved_class = doc_class or "contract"
-    types = field_types or get_field_types(resolved_class) or _infer_field_types(
+    # Copy: setdefault below used to mutate the shared per-class map.
+    types = dict(field_types or get_field_types(resolved_class) or _infer_field_types(
         keys, predicted, expected
-    )
+    ))
     for key in keys:
         types.setdefault(key, _heuristic_field_type(key, predicted.get(key, expected.get(key))) if DOJO_AVAILABLE else "free_text")
 

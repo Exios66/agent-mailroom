@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import shutil
+import tempfile
 from pathlib import Path
 
 from agent_mailroom.config.loader import base_dir, taxonomy
@@ -18,7 +21,8 @@ def inbox_dir() -> Path:
 
 
 def processing_dir(doc_id: str) -> Path:
-    return _ensure(_path("processing") / doc_id)
+    root = _path("processing")
+    return _ensure(_contained(root, root / safe_slug(doc_id, default="doc")))
 
 
 def review_dir() -> Path:
@@ -29,8 +33,41 @@ def failed_dir() -> Path:
     return _ensure(_path("failed"))
 
 
+_SLUG_BAD = re.compile(r"[^A-Za-z0-9._-]+")
+_DOC_ID_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def safe_slug(value: str | None, *, default: str = "DEFAULT") -> str:
+    """A single safe path segment. ``matter_id`` arrives from upload forms and
+    sidecars; "../../x" used to escape the archive root."""
+    cleaned = _SLUG_BAD.sub("-", str(value or "")).strip(".-")[:96]
+    return cleaned or default
+
+
+def safe_doc_type(doc_type: str | None) -> str:
+    """Only taxonomy doc classes become directories; anything else is ``unknown``."""
+    from agent_mailroom.config.loader import live_doc_types
+
+    value = str(doc_type or "")
+    return value if value in set(live_doc_types()) else "unknown"
+
+
+def valid_doc_id(doc_id: str | None) -> bool:
+    """Doc ids are interpolated into glob patterns — reject separators / wildcards."""
+    return bool(doc_id) and bool(_DOC_ID_OK.match(str(doc_id)))
+
+
+def _contained(root: Path, path: Path) -> Path:
+    resolved_root = root.resolve()
+    resolved = path.resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        raise ValueError(f"path escapes {resolved_root}: {path}")
+    return path
+
+
 def archive_dir(matter_id: str, doc_type: str) -> Path:
-    return _ensure(_path("archive") / matter_id / doc_type)
+    root = _path("archive")
+    return _ensure(_contained(root, root / safe_slug(matter_id) / safe_doc_type(doc_type)))
 
 
 def manifests_dir() -> Path:
@@ -44,7 +81,7 @@ def hive_dir() -> Path:
 def classified_dir(doc_type: str | None = None) -> Path:
     root = _ensure(_path("classified"))
     if doc_type:
-        return _ensure(root / (doc_type or "unknown"))
+        return _ensure(root / safe_doc_type(doc_type))
     return root
 
 
@@ -64,23 +101,36 @@ def ensure_bins() -> None:
     hive_dir()
 
 
-def write_manifest(doc_id: str, payload: dict) -> Path:
-    path = manifests_dir() / f"{doc_id}.json"
-    path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+def atomic_write_text(path: Path, text: str) -> Path:
+    """Write via a temp file + ``os.replace`` so readers never see a torn file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
     return path
 
 
+def write_manifest(doc_id: str, payload: dict) -> Path:
+    path = manifests_dir() / f"{safe_slug(doc_id, default='doc')}.json"
+    return atomic_write_text(path, json.dumps(payload, indent=2, default=str))
+
+
 def load_manifest(doc_id: str) -> dict | None:
-    path = manifests_dir() / f"{doc_id}.json"
+    path = manifests_dir() / f"{safe_slug(doc_id, default='doc')}.json"
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def safe_filename(name: str | None) -> str:
-    base = Path(name or "document.txt").name
-    cleaned = base.replace("\x00", "").strip() or "document.txt"
-    return cleaned
+    base = Path(str(name or "document.txt").replace("\\", "/")).name
+    cleaned = base.replace("\x00", "").strip().lstrip(".") or "document.txt"
+    return cleaned[:200]
 
 
 def enqueue_inbox(
@@ -93,6 +143,9 @@ def enqueue_inbox(
 ) -> Path:
     """Park a file in the inbox with a sidecar. The watcher (or scan_inbox) claims it."""
     name = safe_filename(filename)
+    matter_id = safe_slug(matter_id)
+    if not valid_doc_id(doc_id):
+        raise ValueError(f"invalid doc_id {doc_id!r}")
     dest = inbox_dir() / f"{doc_id}--{name}"
     dest.write_bytes(raw)
     write_inbox_meta(
@@ -183,8 +236,51 @@ def copy_classified(src: Path, *, doc_id: str, doc_type: str, filename: str) -> 
     return dest
 
 
-def locate_document(doc_id: str) -> dict:
+def document_index() -> dict[str, dict]:
+    """Every on-disk document in one pass, same precedence as
+    ``locate_document`` (live file first, classified snapshot last).
+
+    ``/floor`` used to call ``locate_document`` per row — an inbox scan plus
+    two recursive globs each — so 80 runs meant 160 tree walks per poll.
+    """
+    ensure_bins()
+    index: dict[str, dict] = {}
+
+    def put(doc_id: str | None, bin_name: str, path: Path) -> None:
+        if doc_id and doc_id not in index:
+            index[doc_id] = {"bin": bin_name, "path": path}
+
+    for path in inbox_pending():
+        meta = read_inbox_meta(path)
+        put(meta.get("doc_id") or (path.name.split("--", 1)[0] if "--" in path.name else None), "inbox", path)
+    proc_root = _path("processing")
+    if proc_root.exists():
+        for folder in sorted(proc_root.iterdir()):
+            if folder.is_dir():
+                files = sorted(p for p in folder.iterdir() if p.is_file())
+                if files:
+                    put(folder.name, "processing", files[0])
+    for bin_name, root, recursive in (
+        ("review", review_dir(), False),
+        ("failed", failed_dir(), False),
+        ("archive", _path("archive"), True),
+        ("classified", _path("classified"), True),
+    ):
+        if not root.exists():
+            continue
+        paths = sorted(root.rglob("*--*") if recursive else root.glob("*--*"))
+        for path in paths:
+            if path.is_file() and not path.name.endswith(".meta"):
+                put(path.name.split("--", 1)[0], bin_name, path)
+    return index
+
+
+def locate_document(doc_id: str, index: dict[str, dict] | None = None) -> dict:
     """Find the on-disk tray for a document. Classified is a snapshot; live file wins."""
+    if not valid_doc_id(doc_id):
+        return {"bin": None, "path": None}
+    if index is not None:
+        return dict(index.get(doc_id) or {"bin": None, "path": None})
     ensure_bins()
     for path in inbox_pending():
         meta = read_inbox_meta(path)

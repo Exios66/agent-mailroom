@@ -1,5 +1,5 @@
 ACTOR_FOR_NODE = {
-    "intake": "intake",
+    "intake": "sorter",  # reception receives the envelope (intake is procedural)
     "classify": "sorter",
     "retry_classify": "sorter",
     "review_classify": "sorter_reviewer",

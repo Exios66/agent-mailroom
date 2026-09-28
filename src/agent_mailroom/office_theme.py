@@ -8,11 +8,17 @@ GID_MASK = 0x1FFFFFFF
 
 
 def office_dir() -> Path:
+    """``MAILROOM_OFFICE_DIR`` wins (non-editable installs), else the checkout."""
+    import os
+
     here = Path(__file__).resolve()
     candidates = [
         here.parents[2] / "office",
         Path.cwd() / "office",
     ]
+    explicit = os.environ.get("MAILROOM_OFFICE_DIR", "").strip()
+    if explicit:
+        candidates.insert(0, Path(explicit).expanduser())
     for path in candidates:
         if path.is_dir():
             return path

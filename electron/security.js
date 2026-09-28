@@ -45,7 +45,16 @@ function isAllowedExternal(urlString) {
 }
 
 function isAllowedNavigation(urlString, serverOrigin) {
-  if (serverOrigin && urlString.startsWith(serverOrigin)) return true;
+  // Compare parsed origins: a string prefix check let
+  // "http://127.0.0.1:8000.evil.example/" pass for "http://127.0.0.1:8000",
+  // and the loopback fallback allowed any local service on any port.
+  if (serverOrigin) {
+    try {
+      return new URL(urlString).origin === new URL(serverOrigin).origin;
+    } catch {
+      return false;
+    }
+  }
   return isLoopbackUrl(urlString);
 }
 

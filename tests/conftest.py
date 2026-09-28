@@ -14,6 +14,10 @@ def isolated_data(tmp_path, monkeypatch):
     monkeypatch.setenv("MAILROOM_LLM_PROVIDER", "mock")
     monkeypatch.setenv("MAILROOM_API_TOKEN", "")
     monkeypatch.setenv("MAILROOM_SYNC", "1")
+    # Loopback unless a test opts into a public bind (fail-closed checks).
+    monkeypatch.setenv("MAILROOM_HOST", "127.0.0.1")
+    monkeypatch.delenv("MAILROOM_ALLOW_OPEN", raising=False)
+    monkeypatch.delenv("MAILROOM_TRACE_CACHE_DIR", raising=False)
     from agent_mailroom.config import loader
 
     loader.taxonomy.cache_clear()

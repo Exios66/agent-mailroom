@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_mailroom.config.loader import agent_roster
-from agent_mailroom.pipeline.bins import hive_dir
+from agent_mailroom.pipeline.bins import atomic_write_text, hive_dir
 from agent_mailroom.pipeline.events import emit
 from agent_mailroom.schemas.hive import HiveMessage
 
@@ -37,7 +37,9 @@ def seed_hive() -> None:
         }
         for name, meta in agent_roster().items()
     }
-    (hive / "registry.json").write_text(json.dumps(registry, indent=2), encoding="utf-8")
+    # Atomic: roster_status() reads this on every poll and a torn write
+    # raised JSONDecodeError mid-seed.
+    atomic_write_text(hive / "registry.json", json.dumps(registry, indent=2))
     board = hive / "board.md"
     if not board.exists():
         board.write_text("# Blackboard\n\nShared matter notes live here.\n", encoding="utf-8")
